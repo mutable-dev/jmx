@@ -43,6 +43,34 @@ pub struct InitializeExchange<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
+#[derive(Accounts)]
+#[instruction(exchange_name: String)]
+pub struct UpdateAssetWhitelist<'info> {
+    // exchange Authority accounts
+    #[account(
+			mut,
+			constraint = exchange_admin.key() == exchange.admin
+		)]
+    pub exchange_admin: Signer<'info>,
+    // exchange Accounts
+    #[account(
+        seeds = [exchange_name.as_bytes()],
+        bump,
+    )]
+    pub exchange: Box<Account<'info, Exchange>>,
+    /// CHECK: this is our authority, no checked account required
+    #[account(
+        mut,
+        seeds = [EXCHANGE_AUTHORITY_SEED.as_bytes(), exchange_name.as_bytes()],
+        bump,
+    )]
+    pub exchange_authority: UncheckedAccount<'info>,
+    // Programs and Sysvars
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
 #[account]
 #[derive(Default)]
 pub struct Exchange {

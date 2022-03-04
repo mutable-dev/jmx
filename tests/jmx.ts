@@ -17,8 +17,9 @@ describe('jmx', () => {
   redeemableMint,
   redeemableMintBump;
 
+  const exchangeAdmin = anchor.web3.Keypair.generate();
+
   it('Is initialized!', async () => {
-    const exchangeAdmin = anchor.web3.Keypair.generate();
 
     const provider = anchor.Provider.env()
     anchor.setProvider(provider);
@@ -62,6 +63,47 @@ describe('jmx', () => {
           exchangeAdmin: exchangeAdmin.publicKey,
           exchangeAuthority:exchangeAuthority,
           redeemableMint:redeemableMint,
+          exchange: exchange,
+          //System stuff
+          systemProgram: anchor.web3.SystemProgram.programId,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        signers: [
+          exchangeAdmin
+        ]
+      });
+    console.log("Your transaction signature", tx);
+  });
+
+  it('Updates asset whitelist', async () => {
+    const provider = anchor.Provider.env()
+    anchor.setProvider(provider);
+
+    [redeemableMint] =
+    await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from("redeemable-mint"), Buffer.from('jmx')],
+      program.programId
+    );
+
+    [exchangeAuthority] =
+    await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from("exchange-authority"), Buffer.from('jmx')],
+      program.programId
+    );
+
+    [exchange] =
+    await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from('jmx')],
+      program.programId
+    );
+
+    const tx = await program.rpc.updateAssetWhitelist(
+      'jmx',
+      {
+        accounts: {
+          exchangeAdmin: exchangeAdmin.publicKey,
+          exchangeAuthority:exchangeAuthority,
           exchange: exchange,
           //System stuff
           systemProgram: anchor.web3.SystemProgram.programId,

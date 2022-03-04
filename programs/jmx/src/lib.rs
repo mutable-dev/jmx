@@ -31,4 +31,8 @@ pub mod jmx {
         exchange.name = name_data;
         Ok(())
     }
+
+    pub fn update_asset_whitelist(ctx: Context<UpdateAssetWhitelist>, exchange_name: String) -> ProgramResult {
+        Ok(())
+    }
 }
