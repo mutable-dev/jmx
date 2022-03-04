@@ -1,9 +1,7 @@
 use solana_program::clock::{Slot};
 use anchor_spl::token::{Mint, Token};
 use anchor_lang::prelude::*;
-// use types::ProgramResult;
 use crate::constants::*;
-
 use crate::*;
 
 #[derive(Accounts)]
@@ -59,13 +57,37 @@ pub struct UpdateAssetWhitelist<'info> {
         bump,
     )]
     pub exchange: Box<Account<'info, Exchange>>,
-    /// CHECK: this is our authority, no checked account required
+    // Programs and Sysvars
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+#[instruction(exchange_name: String, available_asset_account: AvailableAsset)]
+pub struct InitializeAvailableAsset<'info> {
+    // exchange Authority accounts
     #[account(
-        mut,
-        seeds = [EXCHANGE_AUTHORITY_SEED.as_bytes(), exchange_name.as_bytes()],
+			mut,
+			constraint = exchange_admin.key() == exchange.admin
+		)]
+    pub exchange_admin: Signer<'info>,
+    // exchange Accounts
+    #[account(
+				mut,
+        seeds = [exchange_name.as_bytes()],
         bump,
     )]
-    pub exchange_authority: UncheckedAccount<'info>,
+		pub exchange: Box<Account<'info, Exchange>>,
+		#[account(
+			init,
+			seeds = [exchange_name.as_bytes(), mint_account.key().as_ref()],
+			bump,
+			payer = exchange_admin,
+		)]
+		pub available_asset_account: Account<'info, AvailableAsset>,
+		#[account()]
+    pub mint_account: Box<Account<'info, Mint>>,
     // Programs and Sysvars
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
@@ -132,15 +154,9 @@ pub struct AvailableAsset {
 	pub net_protocol_liabilities: u64
 }
 
+
 impl Exchange {
 	const LEN: usize = 32 * 20 
-	+ 8
-	+ 8
-	+ 8
-	+ 8
-	+ 8
-	+ 8
-	+ 8
-	+ 8 
+	+ (8 * SMALL_UINTS_IN_EXCHANGE as usize)
 	+ 32;
 }

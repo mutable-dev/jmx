@@ -37,4 +37,8 @@ pub mod jmx {
         exchange.assets = assets;
         Ok(())
     }
+
+    pub fn initialize_available_asset(ctx: Context<InitializeAvailableAsset>) -> ProgramResult {
+        Ok(())
+    }
 }
