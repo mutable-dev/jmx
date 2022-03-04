@@ -2,6 +2,7 @@ import * as anchor from '@project-serum/anchor';
 import { Program } from '@project-serum/anchor';
 import { TOKEN_PROGRAM_ID} from "@solana/spl-token";
 import { Jmx } from '../target/types/jmx';
+import assert from "assert";
 
 describe('jmx', () => {
 
@@ -73,7 +74,22 @@ describe('jmx', () => {
           exchangeAdmin
         ]
       });
-    console.log("Your transaction signature", tx);
+
+    let exchangeAccount = await provider.connection.getAccountInfo(
+      exchange
+    );
+    const exchangeAccountData = program.coder.accounts.decode('Exchange', exchangeAccount.data)
+    assert.equal(exchangeAccountData.taxBasisPoints.toNumber(), 8);
+    assert.equal(exchangeAccountData.stableTaxBasisPoints.toNumber(), 4);
+    assert.equal(exchangeAccountData.mintBurnBasisPoints.toNumber(), 15);
+    assert.equal(exchangeAccountData.swapFeeBasisPoints.toNumber(), 30);
+    assert.equal(exchangeAccountData.stableSwapFeeBasisPoints.toNumber(), 8);
+    assert.equal(exchangeAccountData.marginFeeBasisPoints.toNumber(), 1);
+    assert.equal(exchangeAccountData.liquidationFeeUsd.toNumber(), 40);
+    assert.equal(exchangeAccountData.minProfitTime.toNumber(), 15);
+    assert.equal(exchangeAccountData.totalWeights.toNumber(), 60);
+    assert.equal(exchangeAccountData.admin.toString(), exchangeAdmin.publicKey.toString());
+    assert.equal((String.fromCharCode.apply(null, exchangeAccountData.name)) === 'jmx                 ', true);
   });
 
   it('Updates asset whitelist', async () => {
@@ -98,8 +114,13 @@ describe('jmx', () => {
       program.programId
     );
 
+    const asset1 = anchor.web3.Keypair.generate();
+    const asset2 = anchor.web3.Keypair.generate();
+
+
     const tx = await program.rpc.updateAssetWhitelist(
       'jmx',
+      [asset1.publicKey, asset2.publicKey],
       {
         accounts: {
           exchangeAdmin: exchangeAdmin.publicKey,
@@ -113,7 +134,13 @@ describe('jmx', () => {
         signers: [
           exchangeAdmin
         ]
-      });
-    console.log("Your transaction signature", tx);
+      }
+    );
+    let exchangeAccount = await provider.connection.getAccountInfo(
+      exchange
+    );
+    const exchangeAccountData = program.coder.accounts.decode('Exchange', exchangeAccount.data)
+    assert.equal(exchangeAccountData.assets[0].toString(), asset1.publicKey.toString());
+    assert.equal(exchangeAccountData.assets[1].toString(), asset2.publicKey.toString())
   });
 });

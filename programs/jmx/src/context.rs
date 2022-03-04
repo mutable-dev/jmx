@@ -54,6 +54,7 @@ pub struct UpdateAssetWhitelist<'info> {
     pub exchange_admin: Signer<'info>,
     // exchange Accounts
     #[account(
+				mut,
         seeds = [exchange_name.as_bytes()],
         bump,
     )]
@@ -128,7 +129,7 @@ pub struct AvailableAsset {
 	/// Global size of shorts denominated in kind
 	pub global_short_size: u64,
 	/// Represents the total outstanding obligations of the protocol (position - size) for the asset
-	pub guaranteed_uds: u64
+	pub net_protocol_liabilities: u64
 }
 
 impl Exchange {

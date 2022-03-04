@@ -32,7 +32,9 @@ pub mod jmx {
         Ok(())
     }
 
-    pub fn update_asset_whitelist(ctx: Context<UpdateAssetWhitelist>, exchange_name: String) -> ProgramResult {
+    pub fn update_asset_whitelist(ctx: Context<UpdateAssetWhitelist>, exchange_name: String, assets: Vec<Pubkey>) -> ProgramResult {
+        let exchange = &mut ctx.accounts.exchange;
+        exchange.assets = assets;
         Ok(())
     }
 }
