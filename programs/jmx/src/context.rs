@@ -1,5 +1,5 @@
 use solana_program::clock::{Slot};
-use anchor_spl::token::{Mint, Token};
+use anchor_spl::token::{Mint, Token, TokenAccount};
 use anchor_lang::prelude::*;
 use crate::constants::*;
 use crate::*;
@@ -64,7 +64,7 @@ pub struct UpdateAssetWhitelist<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(exchange_name: String, available_asset_account: AvailableAsset)]
+#[instruction(exchange_name: String, asset_name: String, available_asset_account: AvailableAsset)]
 pub struct InitializeAvailableAsset<'info> {
     // exchange Authority accounts
     #[account(
@@ -81,13 +81,23 @@ pub struct InitializeAvailableAsset<'info> {
 		pub exchange: Box<Account<'info, Exchange>>,
 		#[account(
 			init,
-			seeds = [exchange_name.as_bytes(), mint_account.key().as_ref()],
+			seeds = [exchange_name.as_bytes(), mint.key().as_ref()],
 			bump,
 			payer = exchange_admin,
 		)]
 		pub available_asset_account: Account<'info, AvailableAsset>,
+		#[account(
+			init,
+			token::mint = mint,
+			token::authority = exchange_admin,
+			seeds = [asset_name.as_bytes(), exchange_name.as_bytes()],
+			bump,
+			payer = exchange_admin
+		)]
+		pub exchange_asset: Box<Account<'info, TokenAccount>>,
 		#[account()]
-    pub mint_account: Box<Account<'info, Mint>>,
+    pub mint: Box<Account<'info, Mint>>,
+		/// CHECK: not sure what type the authority should be, so keeping as unchecked account
     // Programs and Sysvars
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,

@@ -45,10 +45,12 @@ describe('jmx', () => {
   exchangeAuthorityPda,
   exchangePda,
   redeemableMintPda,
-  availableAssetPda;
+  availableAssetPda,
+  exchangeUSDCPda;
 
   const usdcMintPublicKey = new anchor.web3.PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v')
   const exchangeName = 'jmx'
+  const exchangeUsdc = 'exchange-usdc'
   const exchangeAdmin = anchor.web3.Keypair.generate();
 
   it('Is initialized!', async () => {
@@ -153,6 +155,11 @@ describe('jmx', () => {
       program.programId
     );
 
+    [exchangeUSDCPda] = await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(exchangeUsdc), Buffer.from(exchangeName)],
+      program.programId
+    );
+
     const asset1 = anchor.web3.Keypair.generate();
     const asset2 = anchor.web3.Keypair.generate();
 
@@ -173,13 +180,15 @@ describe('jmx', () => {
 
     let tx = await program.rpc.initializeAvailableAsset(
       exchangeName,
+      exchangeUsdc,
       availableAssetInputData,
       {
         accounts: {
           exchangeAdmin: exchangeAdmin.publicKey,
           exchange: exchangePda,
-          mintAccount: new anchor.web3.PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"),
+          mint: new anchor.web3.PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"),
           availableAssetAccount: availableAssetPda,
+          exchangeAsset: exchangeUSDCPda,
           //System stuff
           systemProgram: anchor.web3.SystemProgram.programId,
           rent: anchor.web3.SYSVAR_RENT_PUBKEY,

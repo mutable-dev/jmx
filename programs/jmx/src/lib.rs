@@ -32,15 +32,16 @@ pub mod jmx {
         Ok(())
     }
 
-    pub fn update_asset_whitelist(ctx: Context<UpdateAssetWhitelist>, exchange_name: String, assets: Vec<Pubkey>) -> ProgramResult {
+    pub fn update_asset_whitelist(ctx: Context<UpdateAssetWhitelist>, en: String, assets: Vec<Pubkey>) -> ProgramResult {
         let exchange = &mut ctx.accounts.exchange;
         exchange.assets = assets;
         Ok(())
     }
     
-    pub fn initialize_available_asset(ctx: Context<InitializeAvailableAsset>, exchange_name: String, asset_data: AvailableAsset) -> ProgramResult {
+    // Should throw an error if someone tries to init an already initialized available asset account or an already init-ed token account for that asset
+    pub fn initialize_available_asset(ctx: Context<InitializeAvailableAsset>, en: String, an: String, asset_data: AvailableAsset) -> ProgramResult {
         let asset = &mut ctx.accounts.available_asset_account;
-        asset.mint_address = ctx.accounts.mint_account.key();
+        asset.mint_address = ctx.accounts.mint.key();
         asset.token_decimals = asset_data.token_decimals;
         asset.min_profit_basis_points = asset_data.min_profit_basis_points;
         asset.max_lptoken_amount = asset_data.max_lptoken_amount;

@@ -7,6 +7,8 @@ url = "https://anchor.projectserum.com"
 [[test.validator.clone]]
 address = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" # USDC
 [[test.validator.clone]]
+address = "2wmVCSfPxGPjrnMMn7rchp4uaeoTqN39mXFC2zhPdri9" # USDC Authority
+[[test.validator.clone]]
 address = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" # USDT
 [test.validator]
 url = "m"
