@@ -37,8 +37,24 @@ pub mod jmx {
         exchange.assets = assets;
         Ok(())
     }
-
-    pub fn initialize_available_asset(ctx: Context<InitializeAvailableAsset>) -> ProgramResult {
+    
+    pub fn initialize_available_asset(ctx: Context<InitializeAvailableAsset>, exchange_name: String, asset_data: AvailableAsset) -> ProgramResult {
+        let asset = &mut ctx.accounts.available_asset_account;
+        asset.mint_address = ctx.accounts.mint_account.key();
+        asset.token_decimals = asset_data.token_decimals;
+        asset.min_profit_basis_points = asset_data.min_profit_basis_points;
+        asset.max_lptoken_amount = asset_data.max_lptoken_amount;
+        asset.stable_token = asset_data.stable_token;
+        asset.shortable_token = asset_data.shortable_token;
+        asset.cumulative_funding_rate = 0;
+        // Need to set time to current time with clock
+        asset.last_funding_time = asset_data.last_funding_time;
+        asset.oracle_address = asset_data.oracle_address;
+        asset.backup_oracle_address = asset_data.backup_oracle_address;
+        asset.global_short_size = 0;
+        asset.net_protocol_liabilities = 0; 
+        asset.token_weight = asset_data.token_weight;
+        msg!("token decimals {}", asset.token_decimals);
         Ok(())
     }
 }

@@ -4,6 +4,13 @@ jmx = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
 [registry]
 url = "https://anchor.projectserum.com"
 
+[[test.validator.clone]]
+address = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" # USDC
+[[test.validator.clone]]
+address = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" # USDT
+[test.validator]
+url = "m"
+
 [provider]
 cluster = "localnet"
 wallet = "/Users/jchri/.config/solana/id.json"
