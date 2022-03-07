@@ -1,6 +1,6 @@
 import * as anchor from '@project-serum/anchor';
 import { Program } from '@project-serum/anchor';
-import { TOKEN_PROGRAM_ID} from "@solana/spl-token";
+import { TOKEN_PROGRAM_ID, createMint, mintToChecked, createAssociatedTokenAccount} from "@solana/spl-token";
 import BN from 'bn.js';
 import { Struct, PublicKey } from '@solana/web3.js';
 import { Jmx } from '../target/types/jmx';
@@ -44,24 +44,27 @@ describe('jmx', () => {
   let vault: anchor.web3.PublicKey,
   exchangeAuthorityPda,
   exchangePda,
-  redeemableMintPda,
+  lpMintPda,
   availableAssetPda,
   exchangeUSDCPda;
 
   const usdcMintPublicKey = new anchor.web3.PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v')
   const exchangeName = 'jmx'
-  const exchangeUsdc = 'exchange-usdc'
+  const usdcSeed = 'usdc'
+  const lpMintSeed = 'lp-mint'
+  let fakeUsdcMint;
+
   const exchangeAdmin = anchor.web3.Keypair.generate();
+
+  const publicConnection = new anchor.web3.Connection(
+    "http://localhost:8899",
+    "confirmed"
+  );
 
   it('Is initialized!', async () => {
 
     const provider = anchor.Provider.env()
     anchor.setProvider(provider);
-
-    const publicConnection = new anchor.web3.Connection(
-      "http://localhost:8899",
-      "confirmed"
-    );
 
     // Airdrop some SOL to the vault authority
     await publicConnection.confirmTransaction(
@@ -72,9 +75,9 @@ describe('jmx', () => {
       "confirmed"
     );
 
-    [redeemableMintPda] =
+    [lpMintPda] =
     await anchor.web3.PublicKey.findProgramAddress(
-      [Buffer.from("redeemable-mint"), Buffer.from(exchangeName)],
+      [Buffer.from(lpMintSeed), Buffer.from(exchangeName)],
       program.programId
     );
 
@@ -90,13 +93,21 @@ describe('jmx', () => {
       program.programId
     );
 
+    fakeUsdcMint = await createMint(
+      publicConnection, // connection
+      exchangeAdmin, // fee payer
+      exchangeAdmin.publicKey, // mint authority
+      exchangeAdmin.publicKey, // freeze authority (you can use `null` to disable it. when you disable it, you can't turn it on again)
+      8 // decimals
+    );
+
     const tx = await program.rpc.initializeExchange(
       exchangeName,
       {
         accounts: {
           exchangeAdmin: exchangeAdmin.publicKey,
-          exchangeAuthority:exchangeAuthorityPda,
-          redeemableMint:redeemableMintPda,
+          exchangeAuthority: exchangeAuthorityPda,
+          lpMint: lpMintPda,
           exchange: exchangePda,
           //System stuff
           systemProgram: anchor.web3.SystemProgram.programId,
@@ -131,9 +142,9 @@ describe('jmx', () => {
     const provider = anchor.Provider.env()
     anchor.setProvider(provider);
 
-    [redeemableMintPda] =
+    [lpMintPda] =
     await anchor.web3.PublicKey.findProgramAddress(
-      [Buffer.from("redeemable-mint"), Buffer.from(exchangeName)],
+      [Buffer.from(lpMintSeed), Buffer.from(exchangeName)],
       program.programId
     );
 
@@ -151,12 +162,12 @@ describe('jmx', () => {
 
     [availableAssetPda] =
     await anchor.web3.PublicKey.findProgramAddress(
-      [Buffer.from(exchangeName), usdcMintPublicKey.toBuffer()],
+      [Buffer.from(exchangeName), Buffer.from(usdcSeed)],
       program.programId
     );
 
     [exchangeUSDCPda] = await anchor.web3.PublicKey.findProgramAddress(
-      [Buffer.from(exchangeUsdc), Buffer.from(exchangeName)],
+      [Buffer.from(usdcSeed), Buffer.from(exchangeName)],
       program.programId
     );
 
@@ -180,15 +191,15 @@ describe('jmx', () => {
 
     let tx = await program.rpc.initializeAvailableAsset(
       exchangeName,
-      exchangeUsdc,
+      usdcSeed,
       availableAssetInputData,
       {
         accounts: {
           exchangeAdmin: exchangeAdmin.publicKey,
           exchange: exchangePda,
-          mint: new anchor.web3.PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"),
-          availableAssetAccount: availableAssetPda,
-          exchangeAsset: exchangeUSDCPda,
+          mint: fakeUsdcMint,
+          availableAsset: availableAssetPda,
+          exchangeReserveToken: exchangeUSDCPda,
           //System stuff
           systemProgram: anchor.web3.SystemProgram.programId,
           rent: anchor.web3.SYSVAR_RENT_PUBKEY,
@@ -242,6 +253,90 @@ describe('jmx', () => {
     assert.equal(availableAssetAccountData.backupOracleAddress.toString(), usdcMintPublicKey.toString());
     assert.equal(availableAssetAccountData.globalShortSize.toNumber(), 0);
     assert.equal(availableAssetAccountData.netProtocolLiabilities.toNumber(), 0);
-    assert.equal(availableAssetAccountData.mintAddress.toString(), usdcMintPublicKey.toString());
+    assert.equal(availableAssetAccountData.mintAddress.toString(), fakeUsdcMint.toString());
+  });
+
+  it('mint LP with USDC', async () => {
+    const provider = anchor.Provider.env()
+    anchor.setProvider(provider);
+
+    [lpMintPda] =
+    await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(lpMintSeed), Buffer.from(exchangeName)],
+      program.programId
+    );
+
+    [exchangeAuthorityPda] =
+    await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from("exchange-authority"), Buffer.from(exchangeName)],
+      program.programId
+    );
+
+    [exchangePda] =
+    await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(exchangeName)],
+      program.programId
+    );
+
+    [availableAssetPda] =
+    await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(exchangeName), Buffer.from(usdcSeed)],
+      program.programId
+    );
+
+    [exchangeUSDCPda] = await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(usdcSeed), Buffer.from(exchangeName)],
+      program.programId
+    );
+
+    let fakeUsdcAta = await createAssociatedTokenAccount(
+      publicConnection, // connection
+      exchangeAdmin, // fee payer
+      fakeUsdcMint, // mint
+      exchangeAdmin.publicKey // owner,
+    );
+
+    let fakeUsdcMintTx = await mintToChecked(
+      publicConnection, // connection
+      exchangeAdmin, // fee payer
+      fakeUsdcMint, // mint
+      fakeUsdcAta, // receiver (sholud be a token account)
+      exchangeAdmin, // mint authority
+      1e8, // amount. if your decimals is 8, you mint 10^8 for 1 token.
+      8 // decimals
+    );
+
+    let lpTokenAta = await createAssociatedTokenAccount(
+      publicConnection, // connection
+      exchangeAdmin, // fee payer
+      lpMintPda, // mint
+      exchangeAdmin.publicKey // owner,
+    );
+
+    
+    let tx = await program.rpc.mintLpToken(
+      exchangeName,
+      usdcSeed,
+      new BN(1000),
+      {
+        accounts: {
+          userAuthority: exchangeAdmin.publicKey,
+          exchangeAuthority: exchangeAuthorityPda,
+          userReserveToken: fakeUsdcAta,
+          userLpToken: lpTokenAta,
+          exchange: exchangePda,
+          exchangeReserveToken: exchangeUSDCPda,
+          lpMint: lpMintPda,
+          availableAsset: availableAssetPda,
+          //System stuff
+          systemProgram: anchor.web3.SystemProgram.programId,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        signers: [
+          exchangeAdmin
+        ]
+      }
+    );
   });
 });

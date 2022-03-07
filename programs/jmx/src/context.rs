@@ -4,6 +4,7 @@ use anchor_lang::prelude::*;
 use crate::constants::*;
 use crate::*;
 
+
 #[derive(Accounts)]
 #[instruction(exchange_name: String)]
 pub struct InitializeExchange<'info> {
@@ -30,11 +31,11 @@ pub struct InitializeExchange<'info> {
         init,
         mint::decimals = 8 as u8,
         mint::authority = exchange_authority,
-        seeds = [REDEEMABLE_MINT_SEED.as_bytes(), exchange_name.as_bytes()],
+        seeds = [LP_MINT_SEED.as_bytes(), exchange_name.as_bytes()],
         bump,
         payer = exchange_admin
     )]
-    pub redeemable_mint: Box<Account<'info, Mint>>,
+    pub lp_mint: Box<Account<'info, Mint>>,
     // Programs and Sysvars
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
@@ -64,7 +65,7 @@ pub struct UpdateAssetWhitelist<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(exchange_name: String, asset_name: String, available_asset_account: AvailableAsset)]
+#[instruction(exchange_name: String, asset_name: String, available_asset: AvailableAsset)]
 pub struct InitializeAvailableAsset<'info> {
     // exchange Authority accounts
     #[account(
@@ -81,11 +82,11 @@ pub struct InitializeAvailableAsset<'info> {
 		pub exchange: Box<Account<'info, Exchange>>,
 		#[account(
 			init,
-			seeds = [exchange_name.as_bytes(), mint.key().as_ref()],
+			seeds = [exchange_name.as_bytes(), asset_name.as_bytes()],
 			bump,
 			payer = exchange_admin,
 		)]
-		pub available_asset_account: Account<'info, AvailableAsset>,
+		pub available_asset: Account<'info, AvailableAsset>,
 		#[account(
 			init,
 			token::mint = mint,
@@ -94,10 +95,90 @@ pub struct InitializeAvailableAsset<'info> {
 			bump,
 			payer = exchange_admin
 		)]
-		pub exchange_asset: Box<Account<'info, TokenAccount>>,
+		pub exchange_reserve_token: Box<Account<'info, TokenAccount>>,
 		#[account()]
     pub mint: Box<Account<'info, Mint>>,
 		/// CHECK: not sure what type the authority should be, so keeping as unchecked account
+    // Programs and Sysvars
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+#[instruction(exchange_name: String)]
+pub struct InitializeLpAta<'info> {
+    // exchange Authority accounts
+    #[account(
+			mut		
+		)]
+    pub user: Signer<'info>,
+    // exchange Accounts
+    #[account(
+				mut,
+        seeds = [exchange_name.as_bytes()],
+        bump,
+    )]
+		pub exchange: Box<Account<'info, Exchange>>,
+				#[account(
+			mut,
+			seeds = [EXCHANGE_AUTHORITY_SEED.as_bytes(), exchange_name.as_bytes()],
+			bump,
+		)]
+		/// CHECK: Authority account, might not need another check
+		pub exchange_authority: UncheckedAccount<'info>,
+		#[account()]
+    pub lp_mint: Box<Account<'info, Mint>>,
+		/// CHECK: not sure what type the authority should be, so keeping as unchecked account
+    // Programs and Sysvars
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+// need to check that the mint provided matches the redeemable mint
+#[derive(Accounts)]
+#[instruction(exchange_name: String, asset_name: String, lamports: u64)]
+pub struct MintLpToken<'info> {
+		// user accounts
+    #[account(mut)]
+    pub user_authority: Signer<'info>,
+		#[account(mut)]
+		pub user_reserve_token: Box<Account<'info, TokenAccount>>,
+		#[account(mut)]
+		pub user_lp_token: Box<Account<'info, TokenAccount>>,
+    // exchange Accounts
+		/// CHECK: this is our authority, no checked account required
+		#[account(
+			mut,
+			seeds = [EXCHANGE_AUTHORITY_SEED.as_bytes(), exchange_name.as_bytes()],
+			bump,
+		)]
+		pub exchange_authority: UncheckedAccount<'info>,
+    #[account(
+			mut,
+			seeds = [exchange_name.as_bytes()],
+			bump,
+    )]
+		pub exchange: Box<Account<'info, Exchange>>,
+		#[account(
+			mut,
+			seeds = [exchange_name.as_bytes(), asset_name.as_bytes()],
+			bump,
+		)]
+		pub available_asset: Account<'info, AvailableAsset>,
+		#[account(
+			mut,
+			seeds = [asset_name.as_bytes(), exchange_name.as_bytes()],
+			bump,
+		)]
+		pub exchange_reserve_token: Box<Account<'info, TokenAccount>>,
+		#[account(
+			mut,
+			seeds = [LP_MINT_SEED.as_bytes(), exchange_name.as_bytes()],
+			bump
+		)]
+    pub lp_mint: Box<Account<'info, Mint>>,
     // Programs and Sysvars
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
@@ -169,4 +250,28 @@ impl Exchange {
 	const LEN: usize = 32 * 20 
 	+ (8 * SMALL_UINTS_IN_EXCHANGE as usize)
 	+ 32;
+}
+
+impl<'info> MintLpToken<'info> {
+	pub fn into_transfer_context(&self) -> CpiContext<'_, '_, '_, 'info, Transfer<'info>> {
+			let cpi_accounts = Transfer {
+					from: self.user_reserve_token.to_account_info(),
+					to: self.exchange_reserve_token.to_account_info(),
+					authority: self.user_authority.to_account_info(),
+			};
+			let cpi_program = self.token_program.to_account_info();
+			CpiContext::new(cpi_program, cpi_accounts)
+	}
+	pub fn into_mint_to_context<'a, 'b, 'c>(
+		&self,
+		signer: &'a [&'b [&'c [u8]]],
+	) -> CpiContext<'a, 'b, 'c, 'info, MintTo<'info>> {
+			let cpi_accounts = MintTo {
+					mint: self.lp_mint.to_account_info(),
+					to: self.user_lp_token.to_account_info(),
+					authority: self.exchange_authority.to_account_info(),
+			};
+			let cpi_program = self.token_program.to_account_info();
+			CpiContext::new_with_signer(cpi_program, cpi_accounts, signer)
+	}
 }

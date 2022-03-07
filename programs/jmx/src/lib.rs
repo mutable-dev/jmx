@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token::{self, Burn, CloseAccount, Mint, MintTo, Token, TokenAccount, Transfer};
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 
 pub mod constants;
@@ -10,7 +11,6 @@ use crate::context::*;
 
 #[program]
 pub mod jmx {
-
     use super::*;
     pub fn initialize_exchange(ctx: Context<InitializeExchange>, exchange_name: String) -> ProgramResult {
         let exchange = &mut ctx.accounts.exchange;
@@ -39,8 +39,8 @@ pub mod jmx {
     }
     
     // Should throw an error if someone tries to init an already initialized available asset account or an already init-ed token account for that asset
-    pub fn initialize_available_asset(ctx: Context<InitializeAvailableAsset>, en: String, an: String, asset_data: AvailableAsset) -> ProgramResult {
-        let asset = &mut ctx.accounts.available_asset_account;
+    pub fn initialize_available_asset(ctx: Context<InitializeAvailableAsset>, exchange_name: String, asset_name: String, asset_data: AvailableAsset) -> ProgramResult {
+        let asset = &mut ctx.accounts.available_asset;
         asset.mint_address = ctx.accounts.mint.key();
         asset.token_decimals = asset_data.token_decimals;
         asset.min_profit_basis_points = asset_data.min_profit_basis_points;
@@ -56,6 +56,28 @@ pub mod jmx {
         asset.net_protocol_liabilities = 0; 
         asset.token_weight = asset_data.token_weight;
         msg!("token decimals {}", asset.token_decimals);
+        Ok(())
+    }
+
+    pub fn init_lp_ata(ctx: Context<InitializeLpAta>) -> ProgramResult {
+        Ok(())
+    }
+
+    pub fn mint_lp_token(ctx: Context<MintLpToken>, exchange_name: String, asset_name: String, lamports: u64) -> ProgramResult {
+        // get exchange's token account
+        let token_account = &ctx.accounts.exchange_reserve_token;
+        // check supply on token account
+        let supply = token_account.amount;
+        // transfer lamports from user to reserve_asset_token_acount
+        token::transfer(
+            ctx.accounts.into_transfer_context(),
+            lamports as u64,
+        )?;
+        // get price of lp token
+        // get price of asset to deposit
+        // find fx rate of asset to deposit and lp token
+        // mint lp token to user
+        // update reserve amounts on available asset
         Ok(())
     }
 }
