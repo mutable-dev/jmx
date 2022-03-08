@@ -7,18 +7,21 @@ pub mod context;
 pub mod types;
 use types::ProgramResult;
 use crate::context::*;
+use crate::constants::EXCHANGE_AUTHORITY_SEED;
 
 
 #[program]
 pub mod jmx {
     use super::*;
-    pub fn initialize_exchange(ctx: Context<InitializeExchange>, exchange_name: String) -> ProgramResult {
+    pub fn initialize_exchange(ctx: Context<InitializeExchange>, exchange_name: String, bumps: ExchangeBumps) -> ProgramResult {
         let exchange = &mut ctx.accounts.exchange;
         let name_bytes = exchange_name.as_bytes();
         let mut name_data = [b' '; 20];
         name_data[..name_bytes.len()].copy_from_slice(name_bytes);
 
+        msg!("bumps {:?}", bumps.exchange_authority);
         exchange.tax_basis_points = 8;
+        exchange.bumps = bumps;
         exchange.stable_tax_basis_points = 4;
         exchange.mint_burn_basis_points = 15;
         exchange.swap_fee_basis_points = 30; 
@@ -29,6 +32,8 @@ pub mod jmx {
         exchange.total_weights = 60;
         exchange.admin = ctx.accounts.exchange_admin.key();
         exchange.name = name_data;
+        msg!("bumps after {:?}", exchange.bumps.exchange_authority);
+
         Ok(())
     }
 
@@ -77,7 +82,30 @@ pub mod jmx {
         // get price of asset to deposit
         // find fx rate of asset to deposit and lp token
         // mint lp token to user
+        // let exchange_name = ctx.accounts.exchange.name.as_ref();
+        // let seeds = exchange_authority_seeds!(
+        //     exchange_name = exchange_name,
+        //     bump = ctx.accounts.exchange.bumps.exchange_authority
+        // );
+        // let signer = &[&seeds[..]];
+        // // FIX: Need to update lamports to actual amount calcuated with fx rate
+        // token::mint_to(ctx.accounts.into_mint_to_context(signer), lamports)?;
+
         // update reserve amounts on available asset
         Ok(())
     }
 }
+
+// #[macro_export]
+// macro_rules! exchange_authority_seeds {
+//     (
+//         exchange_name = $exchange_name:expr,
+//         bump = $bump:expr
+//     ) => {
+//         &[
+//             EXCHANGE_AUTHORITY_SEED.as_bytes(),
+//             $exchange_name.strip(),
+//             &[$bump],
+//         ]
+//     };
+// }

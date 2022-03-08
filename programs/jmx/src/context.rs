@@ -211,7 +211,9 @@ pub struct Exchange {
 	/// cache the total weights of the assets	
 	pub total_weights: u64,
 	/// account that can make changes to the exchange
-	pub admin: Pubkey
+	pub admin: Pubkey,
+	/// bumps needed for future signatures
+	pub bumps: ExchangeBumps
 }
 
 /// Represents whitelisted assets on the dex
@@ -243,6 +245,11 @@ pub struct AvailableAsset {
 	pub global_short_size: u64,
 	/// Represents the total outstanding obligations of the protocol (position - size) for the asset
 	pub net_protocol_liabilities: u64
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Default, Clone)]
+pub struct ExchangeBumps {
+	pub exchange_authority: u8,
 }
 
 

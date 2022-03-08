@@ -43,6 +43,7 @@ describe('jmx', () => {
 
   let vault: anchor.web3.PublicKey,
   exchangeAuthorityPda,
+  exchangeAuthorityBump,
   exchangePda,
   lpMintPda,
   availableAssetPda,
@@ -101,8 +102,12 @@ describe('jmx', () => {
       8 // decimals
     );
 
+    console.log('')
     const tx = await program.rpc.initializeExchange(
       exchangeName,
+      {
+        exchangeAuthority: new BN(exchangeAuthorityBump)
+      },
       {
         accounts: {
           exchangeAdmin: exchangeAdmin.publicKey,
@@ -123,6 +128,8 @@ describe('jmx', () => {
       exchangePda
     );
     const exchangeAccountData = program.coder.accounts.decode('Exchange', exchangeAccount.data)
+    console.log("exchangeAccountData", exchangeAccountData)
+    assert.equal(exchangeAccountData.bumps.exchangeAuthority, 8);
     assert.equal(exchangeAccountData.taxBasisPoints.toNumber(), 8);
     assert.equal(exchangeAccountData.stableTaxBasisPoints.toNumber(), 4);
     assert.equal(exchangeAccountData.mintBurnBasisPoints.toNumber(), 15);
