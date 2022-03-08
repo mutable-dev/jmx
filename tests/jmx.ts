@@ -43,6 +43,7 @@ describe('jmx', () => {
 
   let vault: anchor.web3.PublicKey,
   exchangeAuthorityPda,
+  exchangeAuthorityBump,
   exchangePda,
   lpMintPda,
   availableAssetPda,

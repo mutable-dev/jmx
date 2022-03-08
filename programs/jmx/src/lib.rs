@@ -7,6 +7,8 @@ pub mod context;
 pub mod types;
 use types::ProgramResult;
 use crate::context::*;
+use crate::constants::EXCHANGE_AUTHORITY_SEED;
+use std::ops::Deref;
 
 
 #[program]
@@ -29,6 +31,7 @@ pub mod jmx {
         exchange.total_weights = 60;
         exchange.admin = ctx.accounts.exchange_admin.key();
         exchange.name = name_data;
+
         Ok(())
     }
 
@@ -76,8 +79,60 @@ pub mod jmx {
         // get price of lp token
         // get price of asset to deposit
         // find fx rate of asset to deposit and lp token
+        let exchange_auth_bump = match ctx.bumps.get("exchange_authority") {
+            Some(bump) => {
+                bump
+            }
+            None => {
+                msg!("Wrong bump key. Available keys are {:?}", ctx.bumps.keys());
+                panic!("Wrong bump key")
+            }
+        };
+
+
         // mint lp token to user
+        let exchange_name = ctx.accounts.exchange.name.as_ref();
+        let seeds = exchange_authority_seeds!(
+            exchange_name = exchange_name,
+            bump = *exchange_auth_bump
+        );
+        let signer = &[&seeds[..]];
+        // FIX: Need to update lamports to actual amount calcuated with fx rate
+        token::mint_to(ctx.accounts.into_mint_to_context(signer), lamports)?;
+
         // update reserve amounts on available asset
         Ok(())
+    }
+}
+
+#[macro_export]
+macro_rules! exchange_authority_seeds {
+    (
+        exchange_name = $exchange_name:expr,
+        bump = $bump:expr
+    ) => {
+        &[
+            EXCHANGE_AUTHORITY_SEED.as_bytes(),
+            $exchange_name.strip(),
+            &[$bump],
+        ]
+    };
+}
+
+/// Trait to allow trimming ascii whitespace from a &[u8].
+pub trait StripAsciiWhitespace {
+    /// Trim ascii whitespace (based on `is_ascii_whitespace()`) from the
+    /// start and end of a slice.
+    fn strip(&self) -> &[u8];
+}
+
+impl<T: Deref<Target = [u8]>> StripAsciiWhitespace for T {
+    fn strip(&self) -> &[u8] {
+        let from = match self.iter().position(|x| !x.is_ascii_whitespace()) {
+            Some(i) => i,
+            None => return &self[0..0],
+        };
+        let to = self.iter().rposition(|x| !x.is_ascii_whitespace()).unwrap();
+        &self[from..=to]
     }
 }

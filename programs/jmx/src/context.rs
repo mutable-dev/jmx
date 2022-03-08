@@ -211,7 +211,7 @@ pub struct Exchange {
 	/// cache the total weights of the assets	
 	pub total_weights: u64,
 	/// account that can make changes to the exchange
-	pub admin: Pubkey
+	pub admin: Pubkey,
 }
 
 /// Represents whitelisted assets on the dex
@@ -244,7 +244,6 @@ pub struct AvailableAsset {
 	/// Represents the total outstanding obligations of the protocol (position - size) for the asset
 	pub net_protocol_liabilities: u64
 }
-
 
 impl Exchange {
 	const LEN: usize = 32 * 20 
