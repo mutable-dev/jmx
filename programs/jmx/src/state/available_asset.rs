@@ -4,6 +4,7 @@ use anchor_lang::prelude::*;
 #[account]
 #[derive(Default)]
 pub struct AvailableAsset {
+		/// Mint address of the available asset
 	pub mint_address: Pubkey,
 	/// the decimals for the token
 	pub token_decimals: u64,
@@ -28,5 +29,12 @@ pub struct AvailableAsset {
 	/// Global size of shorts denominated in kind
 	pub global_short_size: u64,
 	/// Represents the total outstanding obligations of the protocol (position - size) for the asset
-	pub net_protocol_liabilities: u64
+	pub net_protocol_liabilities: u64,
+	/// Assets that are reserved and having positions trading against them
+	pub occupied_assets: u64,
+	/// Represents how much in reserves the pool owns of the available asset from fees
+	pub fee_reserves: u64,
+	/// Represents the amount of assets in the pool
+	pub pool_reserves: u64,
+
 }

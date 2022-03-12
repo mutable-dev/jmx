@@ -54,7 +54,7 @@ pub fn handler(ctx: Context<InitializeExchange>, exchange_name: String) -> Progr
 	exchange.margin_fee_basis_points = 1;
 	exchange.liquidation_fee_usd = 40;
 	exchange.min_profit_time = 15;
-	exchange.total_weights = 60;
+	exchange.total_weights = 0;
 	exchange.admin = ctx.accounts.exchange_admin.key();
 	exchange.name = name_data;
 

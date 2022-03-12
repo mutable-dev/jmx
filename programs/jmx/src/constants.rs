@@ -11,4 +11,10 @@ pub const SMALL_UINTS_IN_EXCHANGE: u8 = 8;
 #[constant]
 pub const AVAILABLE_ASSET_SPACE: u16 = 624;
 #[constant]
+pub const BASIS_POINTS_DIVISOR: u16 = 10000;
+#[constant]
+pub const FEE_IN_BASIS_POINTS: u16 = 10030;
+#[constant]
+pub const PENALTY_IN_BASIS_POINTS: u16 = 60;
+#[constant]
 pub const USDC: &str = "usdc";

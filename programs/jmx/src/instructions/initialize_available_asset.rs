@@ -34,7 +34,7 @@ pub struct InitializeAvailableAsset<'info> {
 			payer = exchange_admin
 		)]
 		pub exchange_reserve_token: Box<Account<'info, TokenAccount>>,
-		#[account()]
+		#[account(mut)]
     pub mint: Box<Account<'info, Mint>>,
 		/// CHECK: not sure what type the authority should be, so keeping as unchecked account
     // Programs and Sysvars
@@ -46,6 +46,9 @@ pub struct InitializeAvailableAsset<'info> {
 // Should throw an error if someone tries to init an already initialized available asset account or an already init-ed token account for that asset
 pub fn handler(ctx: Context<InitializeAvailableAsset>, exchange_name: String, asset_name: String, asset_data: AvailableAsset) -> ProgramResult {
 	let asset = &mut ctx.accounts.available_asset;
+	msg!("ctx.accounts.mint.key() {:?} asset_data.mint_address {:?}", ctx.accounts.mint.key(), asset_data.mint_address );
+	assert!(ctx.accounts.mint.key() == asset_data.mint_address, "Mints are not same");
+
 	asset.mint_address = ctx.accounts.mint.key();
 	asset.token_decimals = asset_data.token_decimals;
 	asset.min_profit_basis_points = asset_data.min_profit_basis_points;
@@ -60,6 +63,12 @@ pub fn handler(ctx: Context<InitializeAvailableAsset>, exchange_name: String, as
 	asset.global_short_size = 0;
 	asset.net_protocol_liabilities = 0; 
 	asset.token_weight = asset_data.token_weight;
-	msg!("token decimals {}", asset.token_decimals);
+	asset.occupied_assets = 0;
+	asset.fee_reserves = 0;
+	asset.pool_reserves = 0;
+
+	let exchange = &mut ctx.accounts.exchange;
+	exchange.total_weights += asset.token_weight;
+
 	Ok(())
 }

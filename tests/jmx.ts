@@ -1,6 +1,6 @@
 import * as anchor from '@project-serum/anchor';
 import { Program } from '@project-serum/anchor';
-import { TOKEN_PROGRAM_ID, createMint, mintToChecked, createAssociatedTokenAccount} from "@solana/spl-token";
+import { TOKEN_PROGRAM_ID, createMint, mintToChecked, createAssociatedTokenAccount, getAccount } from "@solana/spl-token";
 import BN from 'bn.js';
 import { Struct, PublicKey } from '@solana/web3.js';
 import { Jmx } from '../target/types/jmx';
@@ -34,6 +34,8 @@ class AvailableAsset extends Struct {
 	netProtocolLiabilities: BN
 }
 
+const exchangeAuthoritySeed = 'exchange-authority'
+
 describe('jmx', () => {
 
   // Configure the client to use the local cluster.
@@ -46,14 +48,22 @@ describe('jmx', () => {
   exchangeAuthorityBump,
   exchangePda,
   lpMintPda,
-  availableAssetPda,
+  availableAssetPdaUsdc,
+  availableAssetPdaWSol,
+  exchangeWSolPda,
   exchangeUSDCPda;
 
   const usdcMintPublicKey = new anchor.web3.PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v')
+  const usdcOraclePubkey = new anchor.web3.PublicKey('Gnt27xtC473ZT2Mw5u8wZ68Z3gULkSTb5DuxJy7eJotD')
+  const wSolOraclePubkey = new anchor.web3.PublicKey('H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG')
   const exchangeName = 'jmx'
   const usdcSeed = 'usdc'
+  const wSolSeed = 'wSol'
   const lpMintSeed = 'lp-mint'
   let fakeUsdcMint;
+  let fakeWSolMint;
+  let lpTokenAta;
+  let remainingAccounts;
 
   const exchangeAdmin = anchor.web3.Keypair.generate();
 
@@ -84,7 +94,7 @@ describe('jmx', () => {
 
     [exchangeAuthorityPda] =
     await anchor.web3.PublicKey.findProgramAddress(
-      [Buffer.from("exchange-authority"), Buffer.from(exchangeName)],
+      [Buffer.from(exchangeAuthoritySeed), Buffer.from(exchangeName)],
       program.programId
     );
 
@@ -101,6 +111,17 @@ describe('jmx', () => {
       exchangeAdmin.publicKey, // freeze authority (you can use `null` to disable it. when you disable it, you can't turn it on again)
       8 // decimals
     );
+
+    fakeWSolMint = await createMint(
+      publicConnection, // connection
+      exchangeAdmin, // fee payer
+      exchangeAdmin.publicKey, // mint authority
+      exchangeAdmin.publicKey, // freeze authority (you can use `null` to disable it. when you disable it, you can't turn it on again)
+      8 // decimals
+    );
+
+    console.log("fakeWSolMint", fakeWSolMint.toString())
+    console.log("fakeUsdcMint", fakeUsdcMint.toString())
 
     const tx = await program.rpc.initializeExchange(
       exchangeName,
@@ -132,14 +153,14 @@ describe('jmx', () => {
     assert.equal(exchangeAccountData.marginFeeBasisPoints.toNumber(), 1);
     assert.equal(exchangeAccountData.liquidationFeeUsd.toNumber(), 40);
     assert.equal(exchangeAccountData.minProfitTime.toNumber(), 15);
-    assert.equal(exchangeAccountData.totalWeights.toNumber(), 60);
+    assert.equal(exchangeAccountData.totalWeights.toNumber(), 0);
     assert.equal(exchangeAccountData.admin.toString(), exchangeAdmin.publicKey.toString());
     assert.equal((String.fromCharCode.apply(null, exchangeAccountData.name)) === 'jmx                 ', true);
   });
 
   // Need to write test for adding multiple assets, 
   // removing some assets while adding some assets
-  it('Updates asset whitelist and creates a new available asset', async () => {
+  it('Updates asset whitelist and creates a new available asset for USDC', async () => {
     const provider = anchor.Provider.env()
     anchor.setProvider(provider);
 
@@ -151,7 +172,7 @@ describe('jmx', () => {
 
     [exchangeAuthorityPda] =
     await anchor.web3.PublicKey.findProgramAddress(
-      [Buffer.from("exchange-authority"), Buffer.from(exchangeName)],
+      [Buffer.from(exchangeAuthoritySeed), Buffer.from(exchangeName)],
       program.programId
     );
 
@@ -161,7 +182,7 @@ describe('jmx', () => {
       program.programId
     );
 
-    [availableAssetPda] =
+    [availableAssetPdaUsdc] =
     await anchor.web3.PublicKey.findProgramAddress(
       [Buffer.from(exchangeName), Buffer.from(usdcSeed)],
       program.programId
@@ -172,20 +193,18 @@ describe('jmx', () => {
       program.programId
     );
 
-    const asset1 = anchor.web3.Keypair.generate();
-    const asset2 = anchor.web3.Keypair.generate();
-
     const availableAssetInputData = new AvailableAsset({
+      mintAddress: fakeUsdcMint,
       tokenDecimals: new BN(1),
-      tokenWeight: new BN(1),
+      tokenWeight: new BN(10000),
       minProfitBasisPoints: new BN(1),
       maxLptokenAmount: new BN(1),
       stableToken: true,
       shortableToken: true,
       cumulativeFundingRate: new BN(0),
       lastFundingTime: new BN(0),
-      oracleAddress: new anchor.web3.PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"),
-      backupOracleAddress: new anchor.web3.PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"),
+      oracleAddress: usdcOraclePubkey,
+      backupOracleAddress: usdcOraclePubkey,
       globalShortSize: new BN(0),
       netProtocolLiabilities: new BN(0),
     })
@@ -199,7 +218,7 @@ describe('jmx', () => {
           exchangeAdmin: exchangeAdmin.publicKey,
           exchange: exchangePda,
           mint: fakeUsdcMint,
-          availableAsset: availableAssetPda,
+          availableAsset: availableAssetPdaUsdc,
           exchangeReserveToken: exchangeUSDCPda,
           //System stuff
           systemProgram: anchor.web3.SystemProgram.programId,
@@ -214,7 +233,7 @@ describe('jmx', () => {
 
    tx = await program.rpc.updateAssetWhitelist(
       exchangeName,
-      [asset1.publicKey, asset2.publicKey],
+      [fakeUsdcMint, fakeWSolMint],
       {
         accounts: {
           exchangeAdmin: exchangeAdmin.publicKey,
@@ -230,34 +249,40 @@ describe('jmx', () => {
       }
     );
 
-
     let exchangeAccount = await provider.connection.getAccountInfo(
       exchangePda
     );
     const exchangeAccountData = program.coder.accounts.decode('Exchange', exchangeAccount.data)
-    assert.equal(exchangeAccountData.assets[0].toString(), asset1.publicKey.toString());
-    assert.equal(exchangeAccountData.assets[1].toString(), asset2.publicKey.toString())
+    assert.equal(exchangeAccountData.assets[0].toString(), fakeUsdcMint.toString());
+    assert.equal(exchangeAccountData.assets[1].toString(), fakeWSolMint.toString())
 
     let availableAssetAccount = await provider.connection.getAccountInfo(
-      availableAssetPda
+      availableAssetPdaUsdc
     );
     const availableAssetAccountData = program.coder.accounts.decode('AvailableAsset', availableAssetAccount.data)
     assert.equal(availableAssetAccountData.tokenDecimals.toNumber(), 1);
-    assert.equal(availableAssetAccountData.tokenWeight.toNumber(), 1);
+    assert.equal(availableAssetAccountData.tokenWeight.toNumber(), 10000);
     assert.equal(availableAssetAccountData.minProfitBasisPoints.toNumber(), 1);
     assert.equal(availableAssetAccountData.maxLptokenAmount.toNumber(), 1);
     assert.equal(availableAssetAccountData.cumulativeFundingRate.toNumber(), 0);
     assert.equal(availableAssetAccountData.lastFundingTime.toNumber(), 0);
     assert.equal(availableAssetAccountData.stableToken, true);
     assert.equal(availableAssetAccountData.shortableToken, true);
-    assert.equal(availableAssetAccountData.oracleAddress.toString(), usdcMintPublicKey.toString());
-    assert.equal(availableAssetAccountData.backupOracleAddress.toString(), usdcMintPublicKey.toString());
+    assert.equal(availableAssetAccountData.oracleAddress.toString(), usdcOraclePubkey.toString());
+    assert.equal(availableAssetAccountData.backupOracleAddress.toString(), usdcOraclePubkey.toString());
     assert.equal(availableAssetAccountData.globalShortSize.toNumber(), 0);
     assert.equal(availableAssetAccountData.netProtocolLiabilities.toNumber(), 0);
     assert.equal(availableAssetAccountData.mintAddress.toString(), fakeUsdcMint.toString());
+    assert.equal(availableAssetAccountData.poolReserves.toNumber(), 0);
+
+    let exchangeAccountInfo = await provider.connection.getAccountInfo(
+      exchangePda
+    );
+    const exchangeAccountInfoData = program.coder.accounts.decode('Exchange', exchangeAccountInfo.data)
+    assert.equal(exchangeAccountInfoData.totalWeights, 10000)
   });
 
-  it('mint LP with USDC', async () => {
+  it('Creates a new available asset for wSol', async () => {
     const provider = anchor.Provider.env()
     anchor.setProvider(provider);
 
@@ -269,7 +294,7 @@ describe('jmx', () => {
 
     [exchangeAuthorityPda] =
     await anchor.web3.PublicKey.findProgramAddress(
-      [Buffer.from("exchange-authority"), Buffer.from(exchangeName)],
+      [Buffer.from(exchangeAuthoritySeed), Buffer.from(exchangeName)],
       program.programId
     );
 
@@ -279,7 +304,123 @@ describe('jmx', () => {
       program.programId
     );
 
-    [availableAssetPda] =
+    [availableAssetPdaWSol] =
+    await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(exchangeName), Buffer.from(wSolSeed)],
+      program.programId
+    );
+
+    [exchangeWSolPda] = await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(wSolSeed), Buffer.from(exchangeName)],
+      program.programId
+    );
+
+    const availableAssetInputData = new AvailableAsset({
+      mintAddress: fakeWSolMint,
+      tokenDecimals: new BN(1),
+      tokenWeight: new BN(10000),
+      minProfitBasisPoints: new BN(1),
+      maxLptokenAmount: new BN(1),
+      stableToken: true,
+      shortableToken: true,
+      cumulativeFundingRate: new BN(0),
+      lastFundingTime: new BN(0),
+      oracleAddress: wSolOraclePubkey,
+      backupOracleAddress: wSolOraclePubkey,
+      globalShortSize: new BN(0),
+      netProtocolLiabilities: new BN(0),
+    })
+
+    let tx = await program.rpc.initializeAvailableAsset(
+      exchangeName,
+      wSolSeed,
+      availableAssetInputData,
+      {
+        accounts: {
+          exchangeAdmin: exchangeAdmin.publicKey,
+          exchange: exchangePda,
+          mint: fakeWSolMint,
+          availableAsset: availableAssetPdaWSol,
+          exchangeReserveToken: exchangeWSolPda,
+          //System stuff
+          systemProgram: anchor.web3.SystemProgram.programId,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        signers: [
+          exchangeAdmin
+        ]
+      }
+    );
+
+   tx = await program.rpc.updateAssetWhitelist(
+      exchangeName,
+      [fakeUsdcMint, fakeWSolMint],
+      {
+        accounts: {
+          exchangeAdmin: exchangeAdmin.publicKey,
+          exchange: exchangePda,
+          //System stuff
+          systemProgram: anchor.web3.SystemProgram.programId,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        signers: [
+          exchangeAdmin
+        ]
+      }
+    );
+
+    let exchangeAccount = await provider.connection.getAccountInfo(
+      exchangePda
+    );
+    const exchangeAccountData = program.coder.accounts.decode('Exchange', exchangeAccount.data)
+    assert.equal(exchangeAccountData.assets[0].toString(), fakeUsdcMint.toString());
+    assert.equal(exchangeAccountData.assets[1].toString(), fakeWSolMint.toString())
+
+    let availableAssetAccount = await provider.connection.getAccountInfo(
+      availableAssetPdaWSol
+    );
+    const availableAssetAccountData = program.coder.accounts.decode('AvailableAsset', availableAssetAccount.data)
+    assert.equal(availableAssetAccountData.tokenDecimals.toNumber(), 1);
+    assert.equal(availableAssetAccountData.tokenWeight.toNumber(), 10000);
+    assert.equal(availableAssetAccountData.minProfitBasisPoints.toNumber(), 1);
+    assert.equal(availableAssetAccountData.maxLptokenAmount.toNumber(), 1);
+    assert.equal(availableAssetAccountData.cumulativeFundingRate.toNumber(), 0);
+    assert.equal(availableAssetAccountData.lastFundingTime.toNumber(), 0);
+    assert.equal(availableAssetAccountData.stableToken, true);
+    assert.equal(availableAssetAccountData.shortableToken, true);
+    assert.equal(availableAssetAccountData.oracleAddress.toString(), wSolOraclePubkey.toString());
+    assert.equal(availableAssetAccountData.backupOracleAddress.toString(), wSolOraclePubkey.toString());
+    assert.equal(availableAssetAccountData.globalShortSize.toNumber(), 0);
+    assert.equal(availableAssetAccountData.netProtocolLiabilities.toNumber(), 0);
+    assert.equal(availableAssetAccountData.mintAddress.toString(), fakeWSolMint.toString());
+    assert.equal(availableAssetAccountData.poolReserves.toNumber(), 0);
+  });
+
+  it('mints LP with USDC for the first and second time', async () => {
+    const provider = anchor.Provider.env()
+    anchor.setProvider(provider);
+
+    [lpMintPda] =
+    await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(lpMintSeed), Buffer.from(exchangeName)],
+      program.programId
+    );
+
+    [exchangeAuthorityPda] =
+    await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(exchangeAuthoritySeed), Buffer.from(exchangeName)],
+      program.programId
+    );
+
+    [exchangePda] =
+    await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(exchangeName)],
+      program.programId
+    );
+
+    [availableAssetPdaUsdc] =
     await anchor.web3.PublicKey.findProgramAddress(
       [Buffer.from(exchangeName), Buffer.from(usdcSeed)],
       program.programId
@@ -307,14 +448,36 @@ describe('jmx', () => {
       8 // decimals
     );
 
-    let lpTokenAta = await createAssociatedTokenAccount(
+    lpTokenAta = await createAssociatedTokenAccount(
       publicConnection, // connection
       exchangeAdmin, // fee payer
       lpMintPda, // mint
       exchangeAdmin.publicKey // owner,
     );
 
-    
+    remainingAccounts = [
+      {
+        pubkey: exchangeUSDCPda,
+        isWritable: false,
+        isSigner: false
+      },
+      {
+        pubkey: new anchor.web3.PublicKey("Gnt27xtC473ZT2Mw5u8wZ68Z3gULkSTb5DuxJy7eJotD"),
+        isWritable: false,
+        isSigner: false
+      },
+      {
+        pubkey: exchangeWSolPda,
+        isWritable: false,
+        isSigner: false
+      },
+      {
+        pubkey: new anchor.web3.PublicKey("H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG"),
+        isWritable: false,
+        isSigner: false
+      },
+    ]
+
     let tx = await program.rpc.mintLpToken(
       exchangeName,
       usdcSeed,
@@ -328,7 +491,7 @@ describe('jmx', () => {
           exchange: exchangePda,
           exchangeReserveToken: exchangeUSDCPda,
           lpMint: lpMintPda,
-          availableAsset: availableAssetPda,
+          availableAsset: availableAssetPdaUsdc,
           //System stuff
           systemProgram: anchor.web3.SystemProgram.programId,
           rent: anchor.web3.SYSVAR_RENT_PUBKEY,
@@ -336,8 +499,197 @@ describe('jmx', () => {
         },
         signers: [
           exchangeAdmin
-        ]
+        ],
+        remainingAccounts: remainingAccounts
       }
     );
+
+    await sleep(400)
+
+    let user_lp_token_account = await getAccount(
+      publicConnection,
+      lpTokenAta,
+      'confirmed'
+    )
+    assert.equal(Number(user_lp_token_account.amount), 1000);
+
+    let tx2 = await program.rpc.mintLpToken(
+      exchangeName,
+      usdcSeed,
+      new BN(1000),
+      {
+        accounts: {
+          userAuthority: exchangeAdmin.publicKey,
+          exchangeAuthority: exchangeAuthorityPda,
+          userReserveToken: fakeUsdcAta,
+          userLpToken: lpTokenAta,
+          exchange: exchangePda,
+          exchangeReserveToken: exchangeUSDCPda,
+          lpMint: lpMintPda,
+          availableAsset: availableAssetPdaUsdc,
+          //System stuff
+          systemProgram: anchor.web3.SystemProgram.programId,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        signers: [
+          exchangeAdmin
+        ],
+        remainingAccounts: remainingAccounts
+      }
+    );
+
+    await sleep(400)
+
+    user_lp_token_account = await getAccount(
+      publicConnection,
+      lpTokenAta,
+      'confirmed'
+    )
+    let availableAssetAccount = await provider.connection.getAccountInfo(
+      availableAssetPdaUsdc
+    );
+    const availableAssetAccountData = program.coder.accounts.decode('AvailableAsset', availableAssetAccount.data)
+
+    assert.equal(availableAssetAccountData.poolReserves.toNumber() >= 1970, true);
+    assert.equal(Number(user_lp_token_account.amount) >= 1970, true);
+    assert.equal(Number(user_lp_token_account.amount) <= 2030, true);
+
+  });
+
+  it('mints LP with wSOL for the first and second time', async () => {
+    const provider = anchor.Provider.env()
+    anchor.setProvider(provider);
+
+    [lpMintPda] =
+    await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(lpMintSeed), Buffer.from(exchangeName)],
+      program.programId
+    );
+
+    [exchangeAuthorityPda] =
+    await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(exchangeAuthoritySeed), Buffer.from(exchangeName)],
+      program.programId
+    );
+
+    [exchangePda] =
+    await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(exchangeName)],
+      program.programId
+    );
+
+    [availableAssetPdaWSol] =
+    await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(exchangeName), Buffer.from(wSolSeed)],
+      program.programId
+    );
+
+    [exchangeWSolPda] = await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(wSolSeed), Buffer.from(exchangeName)],
+      program.programId
+    );
+
+    let fakeWSolAta = await createAssociatedTokenAccount(
+      publicConnection, // connection
+      exchangeAdmin, // fee payer
+      fakeWSolMint, // mint
+      exchangeAdmin.publicKey // owner,
+    );
+
+    let fakeWSolMintTx = await mintToChecked(
+      publicConnection, // connection
+      exchangeAdmin, // fee payer
+      fakeWSolMint, // mint
+      fakeWSolAta, // receiver (sholud be a token account)
+      exchangeAdmin, // mint authority
+      1e8, // amount. if your decimals is 8, you mint 10^8 for 1 token.
+      8 // decimals
+    );
+
+    let tx = await program.rpc.mintLpToken(
+      exchangeName,
+      wSolSeed,
+      new BN(10),
+      {
+        accounts: {
+          userAuthority: exchangeAdmin.publicKey,
+          exchangeAuthority: exchangeAuthorityPda,
+          userReserveToken: fakeWSolAta,
+          userLpToken: lpTokenAta,
+          exchange: exchangePda,
+          exchangeReserveToken: exchangeWSolPda,
+          lpMint: lpMintPda,
+          availableAsset: availableAssetPdaWSol,
+          //System stuff
+          systemProgram: anchor.web3.SystemProgram.programId,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        signers: [
+          exchangeAdmin
+        ],
+        remainingAccounts: remainingAccounts
+      }
+    );
+
+    await sleep(400)
+
+    let user_lp_token_account = await getAccount(
+      publicConnection,
+      lpTokenAta,
+      'confirmed'
+    )
+
+    assert.equal(Number(user_lp_token_account.amount) >= 700, true);
+
+    let tx2 = await program.rpc.mintLpToken(
+      exchangeName,
+      wSolSeed,
+      new BN(10),
+      {
+        accounts: {
+          userAuthority: exchangeAdmin.publicKey,
+          exchangeAuthority: exchangeAuthorityPda,
+          userReserveToken: fakeWSolAta,
+          userLpToken: lpTokenAta,
+          exchange: exchangePda,
+          exchangeReserveToken: exchangeWSolPda,
+          lpMint: lpMintPda,
+          availableAsset: availableAssetPdaWSol,
+          //System stuff
+          systemProgram: anchor.web3.SystemProgram.programId,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        signers: [
+          exchangeAdmin
+        ],
+        remainingAccounts: remainingAccounts
+      }
+    );
+
+    await sleep(400)
+
+    user_lp_token_account = await getAccount(
+      publicConnection,
+      lpTokenAta,
+      'confirmed'
+    )
+    let availableAssetAccount = await provider.connection.getAccountInfo(
+      availableAssetPdaWSol
+    );
+    const availableAssetAccountData = program.coder.accounts.decode('AvailableAsset', availableAssetAccount.data)
+    console.log("availableAssetAccountData sol", availableAssetAccountData.poolReserves.toNumber());
+    console.log("Number(user_lp_token_account.amount)", Number(user_lp_token_account.amount))
+    assert.equal(availableAssetAccountData.poolReserves.toNumber() >= 20, true);
+    assert.equal(Number(user_lp_token_account.amount) >= 3400, true);
+    assert.equal(Number(user_lp_token_account.amount) <= 4000, true);
+
   });
 });
+
+export function sleep(ms) {
+  console.log("Sleeping for", ms / 1000, "seconds");
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

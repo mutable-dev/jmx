@@ -9,9 +9,16 @@ address = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" # USDC
 [[test.validator.clone]]
 address = "2wmVCSfPxGPjrnMMn7rchp4uaeoTqN39mXFC2zhPdri9" # USDC Authority
 [[test.validator.clone]]
+address = "Gnt27xtC473ZT2Mw5u8wZ68Z3gULkSTb5DuxJy7eJotD"  # Pyth Price USDC
+[[test.validator.clone]]
 address = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" # USDT
+[[test.validator.clone]]
+address = "H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG" # Pyth Price SOL
 [test.validator]
 url = "m"
+
+[test]
+startup_wait=10000
 
 [provider]
 cluster = "localnet"
