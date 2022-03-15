@@ -59,8 +59,6 @@ pub struct MintLpToken<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
-// CHECK: swap fees should not be included in AUM, they should decrease pool reserves and be 
-// added to fee reserves
 // CHECK: need to check that oracle account provided matches oracle account in available asset
 pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: String, lamports: u64) -> ProgramResult {
 	assert!(
