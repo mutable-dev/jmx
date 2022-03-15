@@ -20,8 +20,8 @@ pub mod jmx {
         instructions::initialize_exchange::handler(ctx, exchange_name)
     }
 
-    pub fn update_asset_whitelist(ctx: Context<UpdateAssetWhitelist>, en: String, assets: Vec<Pubkey>) -> ProgramResult {
-        instructions::update_asset_whitelist::handler(ctx, en, assets)
+    pub fn update_asset_whitelist(ctx: Context<UpdateAssetWhitelist>, en: String, assets: Vec<Pubkey>, price_oracles: Vec<Pubkey>) -> ProgramResult {
+        instructions::update_asset_whitelist::handler(ctx, en, assets, price_oracles)
     }
     
     // Should throw an error if someone tries to init an already initialized available asset account or an already init-ed token account for that asset

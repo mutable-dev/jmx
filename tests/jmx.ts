@@ -234,6 +234,7 @@ describe('jmx', () => {
    tx = await program.rpc.updateAssetWhitelist(
       exchangeName,
       [fakeUsdcMint, fakeWSolMint],
+      [usdcOraclePubkey, wSolOraclePubkey],
       {
         accounts: {
           exchangeAdmin: exchangeAdmin.publicKey,
@@ -256,6 +257,9 @@ describe('jmx', () => {
     assert.equal(exchangeAccountData.assets[0].toString(), fakeUsdcMint.toString());
     assert.equal(exchangeAccountData.assets[1].toString(), fakeWSolMint.toString())
 
+    console.log("exchangeAccountData.price_oracles", exchangeAccountData)
+    assert.equal(exchangeAccountData.priceOracles[0].toString(), usdcOraclePubkey.toString());
+    assert.equal(exchangeAccountData.priceOracles[1].toString(), wSolOraclePubkey.toString())
     let availableAssetAccount = await provider.connection.getAccountInfo(
       availableAssetPdaUsdc
     );
@@ -356,6 +360,7 @@ describe('jmx', () => {
    tx = await program.rpc.updateAssetWhitelist(
       exchangeName,
       [fakeUsdcMint, fakeWSolMint],
+      [usdcOraclePubkey, wSolOraclePubkey],
       {
         accounts: {
           exchangeAdmin: exchangeAdmin.publicKey,

@@ -7,6 +7,8 @@ pub struct Exchange {
 	pub name: [u8; 20],
 	/// assets that can be traded/minted on the exchange
 	pub assets: Vec<Pubkey>,
+	/// pyth price oracles for assets that can be traded/minted on the exchange
+	pub price_oracles: Vec<Pubkey>,
 	/// fee for non-stable asset perp
 	pub tax_basis_points: u64,
 	/// fee for stable asset perp

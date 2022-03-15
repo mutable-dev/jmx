@@ -24,8 +24,10 @@ pub struct UpdateAssetWhitelist<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
-pub fn handler(ctx: Context<UpdateAssetWhitelist>, en: String, assets: Vec<Pubkey>) -> ProgramResult {
+pub fn handler(ctx: Context<UpdateAssetWhitelist>, en: String, assets: Vec<Pubkey>, price_oracles: Vec<Pubkey>) -> ProgramResult {
 	let exchange = &mut ctx.accounts.exchange;
 	exchange.assets = assets;
+  exchange.price_oracles = price_oracles;
+  msg!("price oracles {:?}", exchange.price_oracles);
 	Ok(())
 }

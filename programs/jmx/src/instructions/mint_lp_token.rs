@@ -72,7 +72,11 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 	let exchange_reserve_token = &ctx.accounts.exchange_reserve_token;
 	msg!("lamports {}", lamports);
 
-	let (aum, precise_price, ui_price, exponent) = calculate_aum(ctx.remaining_accounts, exchange_reserve_token).unwrap();
+	let (aum, precise_price, ui_price, exponent) = calculate_aum(
+		ctx.remaining_accounts, 
+		exchange_reserve_token,
+		&ctx.accounts.exchange.price_oracles
+	).unwrap();
 
 	msg!("about to log lp_mint");
 	let lp_mint = &ctx.accounts.lp_mint;
@@ -150,6 +154,15 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 	Ok(())
 }
 
+// cases to consider
+// 1. initialAmount is far from targetAmount, action increases balance slightly => high rebate
+// 2. initialAmount is far from targetAmount, action increases balance largely => high rebate
+// 3. initialAmount is close to targetAmount, action increases balance slightly => low rebate
+// 4. initialAmount is far from targetAmount, action reduces balance slightly => high tax
+// 5. initialAmount is far from targetAmount, action reduces balance largely => high tax
+// 6. initialAmount is close to targetAmount, action reduces balance largely => low tax
+// 7. initialAmount is above targetAmount, nextAmount is below targetAmount and vice versa
+// 8. a large swap should have similar fees as the same trade split into multiple smaller swaps
 /// CHECK: types here are bad, and conversions too many, need to consolidate
 fn calculate_fee_basis_points(
 	aum: u64,
@@ -231,7 +244,8 @@ fn calculate_fee_basis_points(
 
 fn calculate_aum(
 	remaining_accounts: &[AccountInfo], 
-	exchange_reserve_token: &Box<anchor_lang::prelude::Account<'_, TokenAccount>>
+	exchange_reserve_token: &Box<anchor_lang::prelude::Account<'_, TokenAccount>>,
+	price_oracles: &Vec<anchor_lang::prelude::Pubkey>
 ) -> Result<(u64,u64,u64,u64)> {
 	let mut aum = 0;
 	let mut precise_price = 0;
@@ -253,7 +267,8 @@ fn calculate_aum(
 			// CHECK: need to check for decimals better here
 			// CHECK: need to validate pyth data better here
 			// https://github.com/pyth-network/pyth-examples/blob/main/program/src/lib.rs#L49
-			msg!("in price check of  asum");
+			assert!(price_oracles.contains(token_account_info.key), "invalid oracle account provided");
+
 			let pyth_price_data = &token_account_info.try_borrow_data()?;
 			msg!("after borrow price data {}", &token_account_info.key);
 			let pyth_price = pyth_client::cast::<pyth_client::Price>(pyth_price_data);
