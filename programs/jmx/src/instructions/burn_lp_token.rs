@@ -95,22 +95,24 @@ pub fn handler(ctx: Context<BurnLpToken>, exchange_name: String, asset_name: Str
 			.unwrap();
 	
 	msg!("precise_price {}", precise_price);
-	let usd_value_of_burn = precise_price.
-		checked_mul(lamports).
+	let usd_value_of_burn = lamports.
+		checked_mul(price_per_lp_token_numerator).
 		unwrap().
-		checked_div(10_u128.pow(exponent as u32) as u64).
+		checked_div(price_per_lp_token_denominator).
 		unwrap();
+
+	msg!("usd_value_of_burn {}", usd_value_of_burn);
+	
+	let burn_value_to_reserve_amount = usd_value_of_burn.
+		checked_mul(10_u128.pow(exponent as u32) as u64).
+		unwrap().
+		checked_div(precise_price)
+		.unwrap();
 	
 	msg!("numerator price_per_lp_token_numerator {}", price_per_lp_token_numerator);
 	msg!("denom price_per_lp_token_denominator {}", price_per_lp_token_denominator);
-	msg!("usd_value_of_burn {}", usd_value_of_burn);
-	let amount_of_glp_to_burn = usd_value_of_burn.
-		checked_mul(price_per_lp_token_denominator).
-		unwrap().
-		checked_div(price_per_lp_token_numerator).
-		unwrap();
+	msg!("burn_value_to_reserve_amount {}", burn_value_to_reserve_amount);
 
-	msg!("amount_of_glp_to_burn {}", amount_of_glp_to_burn);
 	let exchange_auth_bump = match ctx.bumps.get("exchange_authority") {
 			Some(bump) => {
 					bump
@@ -121,6 +123,14 @@ pub fn handler(ctx: Context<BurnLpToken>, exchange_name: String, asset_name: Str
 			}
 	};
 
+	let transfer_reserve_amount = burn_value_to_reserve_amount.
+	checked_mul(BASIS_POINTS_DIVISOR as u64).
+	unwrap().
+	checked_div(total_fee_in_basis_points).
+	unwrap();
+
+	msg!("transfer_reserve_amount {}", transfer_reserve_amount);
+
 	let exchange_name = ctx.accounts.exchange.name.as_ref();
 	let seeds = exchange_authority_seeds!(
 			exchange_name = exchange_name,
@@ -128,45 +138,42 @@ pub fn handler(ctx: Context<BurnLpToken>, exchange_name: String, asset_name: Str
 	);
 	let signer = &[&seeds[..]];
 
+	token::burn(ctx.accounts.into_burn_context(), lamports as u64)?;
+
 	token::transfer(
-		ctx.accounts.into_transfer_context(),
-		lamports as u64,
+		ctx.accounts.into_transfer_context(signer),
+		transfer_reserve_amount as u64,
 	)?;
 
-	token::burn(ctx.accounts.into_burn_context(signer), amount_of_glp_to_burn as u64)?;
-	// update reserve amounts on available asset
 	let asset = &mut ctx.accounts.available_asset;
-	let new_pool_reserves = lamports.
-	checked_mul(BASIS_POINTS_DIVISOR as u64).
-	unwrap().
-	checked_div(total_fee_in_basis_points).
-	unwrap();
-
-	asset.pool_reserves += new_pool_reserves;
-	asset.fee_reserves += lamports - new_pool_reserves;
+	asset.pool_reserves -= burn_value_to_reserve_amount;
+	asset.fee_reserves += burn_value_to_reserve_amount - transfer_reserve_amount;
+	msg!("pool reserves {} fee reserves {}", asset.pool_reserves, asset.fee_reserves);
 	Ok(())
 }
 
 impl<'info> BurnLpToken<'info> {
-	pub fn into_transfer_context(&self) -> CpiContext<'_, '_, '_, 'info, Transfer<'info>> {
+	pub fn into_transfer_context<'a, 'b, 'c>(
+		&self, 
+		signer: &'a [&'b [&'c [u8]]]
+	) -> CpiContext<'a, 'b, 'c, 'info, Transfer<'info>> {
 			let cpi_accounts = Transfer {
-					from: self.user_reserve_token.to_account_info(),
-					to: self.exchange_reserve_token.to_account_info(),
-					authority: self.user_authority.to_account_info(),
-			};
-			let cpi_program = self.token_program.to_account_info();
-			CpiContext::new(cpi_program, cpi_accounts)
-	}
-	pub fn into_burn_context<'a, 'b, 'c>(
-		&self,
-		signer: &'a [&'b [&'c [u8]]],
-	) -> CpiContext<'a, 'b, 'c, 'info, Burn<'info>> {
-			let cpi_accounts = Burn {
-					mint: self.lp_mint.to_account_info(),
-					to: self.user_lp_token.to_account_info(),
+					from: self.exchange_reserve_token.to_account_info(),
+					to:  self.user_reserve_token.to_account_info(),
 					authority: self.exchange_authority.to_account_info(),
 			};
 			let cpi_program = self.token_program.to_account_info();
 			CpiContext::new_with_signer(cpi_program, cpi_accounts, signer)
+	}
+	pub fn into_burn_context<'a, 'b, 'c>(
+		&self,
+	) -> CpiContext<'a, 'b, 'c, 'info, Burn<'info>> {
+			let cpi_accounts = Burn {
+					mint: self.lp_mint.to_account_info(),
+					to: self.user_lp_token.to_account_info(),
+					authority: self.user_authority.to_account_info(),
+			};
+			let cpi_program = self.token_program.to_account_info();
+			CpiContext::new(cpi_program, cpi_accounts)
 	}
 }

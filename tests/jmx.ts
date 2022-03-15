@@ -213,6 +213,7 @@ describe('jmx', () => {
       {
         accounts: {
           exchangeAdmin: exchangeAdmin.publicKey,
+          exchangeAuthority: exchangeAuthorityPda,
           exchange: exchangePda,
           mint: fakeUsdcMint,
           availableAsset: availableAssetPdaUsdc,
@@ -338,6 +339,7 @@ describe('jmx', () => {
       {
         accounts: {
           exchangeAdmin: exchangeAdmin.publicKey,
+          exchangeAuthority: exchangeAuthorityPda, 
           exchange: exchangePda,
           mint: fakeWSolMint,
           availableAsset: availableAssetPdaWSol,
@@ -567,7 +569,7 @@ describe('jmx', () => {
 
   });
 
-  it('mints LP with wSOL for the first and second time', async () => {
+  it('mints LP with wSOL for the first and second time and then burns', async () => {
     const provider = anchor.Provider.env()
     anchor.setProvider(provider);
 
@@ -689,7 +691,7 @@ describe('jmx', () => {
     let availableAssetAccount = await provider.connection.getAccountInfo(
       availableAssetPdaWSol
     );
-    const availableAssetAccountData = program.coder.accounts.decode('AvailableAsset', availableAssetAccount.data)
+    let availableAssetAccountData = program.coder.accounts.decode('AvailableAsset', availableAssetAccount.data)
     console.log("availableAssetAccountData sol", availableAssetAccountData.poolReserves.toNumber());
     console.log("Number(user_lp_token_account.amount)", Number(user_lp_token_account.amount))
     assert.equal(availableAssetAccountData.poolReserves.toNumber() >= 18, true);
@@ -697,6 +699,64 @@ describe('jmx', () => {
     assert.equal(Number(user_lp_token_account.amount) >= 3400, true);
     assert.equal(Number(user_lp_token_account.amount) <= 4000, true);
 
+    let tx3 = await program.rpc.burnLpToken(
+      exchangeName,
+      wSolSeed,
+      new BN(700),
+      {
+        accounts: {
+          userAuthority: exchangeAdmin.publicKey,
+          exchangeAuthority: exchangeAuthorityPda,
+          userReserveToken: fakeWSolAta,
+          userLpToken: lpTokenAta,
+          exchange: exchangePda,
+          exchangeReserveToken: exchangeWSolPda,
+          lpMint: lpMintPda,
+          availableAsset: availableAssetPdaWSol,
+          //System stuff
+          systemProgram: anchor.web3.SystemProgram.programId,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        signers: [
+          exchangeAdmin
+        ],
+        remainingAccounts: remainingAccounts
+      }
+    );
+
+    await sleep(400)
+
+    user_lp_token_account = await getAccount(
+      publicConnection,
+      lpTokenAta,
+      'confirmed'
+    )
+
+    let wSolExchangeTokenAccount = await getAccount(
+      publicConnection,
+      exchangeWSolPda,
+      'confirmed'
+    )
+
+    availableAssetAccount = await provider.connection.getAccountInfo(
+      availableAssetPdaWSol
+    );
+    availableAssetAccountData = program.coder.accounts.decode('AvailableAsset', availableAssetAccount.data)
+
+
+    let wSolPoolReserves = availableAssetAccountData.poolReserves.toNumber()
+    let wSolPoolFees = availableAssetAccountData.feeReserves.toNumber()
+
+    console.log("wSolPoolReserves", wSolPoolReserves)
+    console.log("wSolPoolFees", wSolPoolFees)
+    // console.log("wSolExchangeTokenAccount", wSolExchangeTokenAccount)
+    assert.equal(wSolPoolReserves >= 8, true);
+    assert.equal(wSolPoolFees >= 2, true);
+    assert.equal(Number(wSolExchangeTokenAccount.amount), 13);
+    assert.equal(Number(wSolExchangeTokenAccount.amount), wSolPoolReserves + wSolPoolFees);
+    assert.equal(Number(user_lp_token_account.amount) >= 2700, true);
+    assert.equal(Number(user_lp_token_account.amount) <= 3300, true);
   });
 });
 

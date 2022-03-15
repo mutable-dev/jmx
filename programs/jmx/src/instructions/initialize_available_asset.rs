@@ -1,6 +1,7 @@
 use anchor_spl::token::{Mint, Token, TokenAccount};
 use anchor_lang::prelude::*;
 use crate::*;
+use crate::constants::EXCHANGE_AUTHORITY_SEED;
 
 #[derive(Accounts)]
 #[instruction(exchange_name: String, asset_name: String, available_asset: AvailableAsset)]
@@ -18,6 +19,13 @@ pub struct InitializeAvailableAsset<'info> {
         bump,
     )]
 		pub exchange: Box<Account<'info, Exchange>>,
+		/// CHECK: this is our authority, no checked account required
+		#[account(
+			mut,
+			seeds = [EXCHANGE_AUTHORITY_SEED.as_bytes(), exchange_name.as_bytes()],
+			bump,
+		)]
+		pub exchange_authority: UncheckedAccount<'info>,
 		#[account(
 			init,
 			seeds = [exchange_name.as_bytes(), asset_name.as_bytes()],
@@ -28,7 +36,7 @@ pub struct InitializeAvailableAsset<'info> {
 		#[account(
 			init,
 			token::mint = mint,
-			token::authority = exchange_admin,
+			token::authority = exchange_authority,
 			seeds = [asset_name.as_bytes(), exchange_name.as_bytes()],
 			bump,
 			payer = exchange_admin

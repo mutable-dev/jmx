@@ -34,7 +34,8 @@ pub struct AvailableAsset {
 	pub occupied_assets: u64,
 	/// Represents how much in reserves the pool owns of the available asset from fees
 	pub fee_reserves: u64,
-	/// Represents the amount of assets in the pool
+	/// Represents the unoccupied + occupied amount of assets in the pool for trading 
+	/// does not include fee_reserves
 	pub pool_reserves: u64,
 
 }
