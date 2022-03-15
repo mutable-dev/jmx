@@ -8,6 +8,7 @@ use anchor_lang::prelude::*;
 use crate::constants::*;
 use crate::*;
 use crate::error::{ErrorCode};
+use std::cmp::max;
 
 // need to check that the mint provided matches the redeemable mint
 // CHECK: that mints and provided assets match for all provided accounts
@@ -70,13 +71,13 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 	let exchange_reserve_token = &ctx.accounts.exchange_reserve_token;
 	msg!("lamports {}", lamports);
 
-	let (aum, precise_price, ui_price, exponent) = calculate_aum(
+	let (aum, precise_price, exponent) = calculate_aum(
 		ctx.remaining_accounts, 
 		exchange_reserve_token,
 		&ctx.accounts.exchange.price_oracles
 	).unwrap();
 
-	msg!("about to log lp_mint");
+	msg!("precise price {}", precise_price);
 	let lp_mint = &ctx.accounts.lp_mint;
 	msg!("lp_mint {:?}", lp_mint.key());
 
@@ -94,6 +95,7 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 			precise_price,
 			exponent,
 			lamports,
+			true
 		);
 		msg!("FEE_IN_BASIS_POINTS {}", FEE_IN_BASIS_POINTS);
 		msg!("total_fee_in_basis_points {}", total_fee_in_basis_points);
@@ -105,9 +107,11 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 	}
 	
 	msg!("precise_price {}", precise_price);
-	let usd_value_of_deposit = ui_price.
-		checked_mul(lamports)
-		.unwrap();
+	let usd_value_of_deposit = precise_price.
+		checked_mul(lamports).
+		unwrap().
+		checked_div(10_u128.pow(exponent as u32) as u64).
+		unwrap();
 	
 	msg!("numerator price_per_lp_token_numerator {}", price_per_lp_token_numerator);
 	msg!("denom price_per_lp_token_denominator {}", price_per_lp_token_denominator);
@@ -165,13 +169,14 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 // 7. initialAmount is above targetAmount, nextAmount is below targetAmount and vice versa
 // 8. a large swap should have similar fees as the same trade split into multiple smaller swaps
 /// CHECK: types here are bad, and conversions too many, need to consolidate
-fn calculate_fee_basis_points(
+pub fn calculate_fee_basis_points(
 	aum: u64,
 	available_asset: &Account<'_, AvailableAsset, >, 
 	total_weight: u64, 
 	price: u64,
 	exponent: u64,
 	new_amount: u64,
+	increment: bool
 ) -> u64 {
 	let current_reserves = available_asset.pool_reserves - available_asset.fee_reserves;
 	msg!("price {}", price);
@@ -182,11 +187,17 @@ fn calculate_fee_basis_points(
 		checked_div(10_i64.pow(exponent as u32) as u64)
 		.unwrap();
 
-	let next_reserve_usd_value = initial_reserve_usd_value + new_amount.
-		checked_mul(price as u64).
-		unwrap().
-		checked_div(10_i64.pow(exponent as u32) as u64)
-		.unwrap();
+	let diff_usd_value = new_amount.
+	checked_mul(price as u64).
+	unwrap().
+	checked_div(10_i64.pow(exponent as u32) as u64)
+	.unwrap();
+
+	let next_reserve_usd_value = if increment { 
+		initial_reserve_usd_value + diff_usd_value 
+	} else { 
+		max(initial_reserve_usd_value - diff_usd_value, 0)
+	};
 	
 	msg!("cur token weight {}", available_asset.token_weight);
 	msg!("total weights {}", total_weight);
@@ -241,14 +252,13 @@ fn calculate_fee_basis_points(
 	return (FEE_IN_BASIS_POINTS as u64).add(penalty as u64)
 }
 
-fn calculate_aum(
+pub fn calculate_aum(
 	remaining_accounts: &[AccountInfo], 
 	exchange_reserve_token: &Box<anchor_lang::prelude::Account<'_, TokenAccount>>,
 	price_oracles: &Vec<anchor_lang::prelude::Pubkey>
-) -> Result<(u64,u64,u64,u64)> {
+) -> Result<(u64,u64,u64)> {
 	let mut aum = 0;
 	let mut precise_price = 0;
-	let mut ui_price = 0;
 	let mut exponent = 1;
 	let mut last_token_account: SPLTokenAccount = SPLTokenAccount::unpack_unchecked(&remaining_accounts[0].data.borrow())?;
 	// msg!("remaining_accounts {:?}", remaining_accounts);
@@ -274,14 +284,10 @@ fn calculate_aum(
 			msg!("last_token_account.mint {}", last_token_account.mint);
 			msg!("exchange_reserve_token.mint {}", exchange_reserve_token.mint);
 			if last_token_account.mint == exchange_reserve_token.mint {
-				msg!("about to set reserve asset price {}", pyth_price.agg.price);
+				msg!("found price oracle for reserve asset...about to set reserve asset price {}", pyth_price.agg.price);
 				exponent = pyth_price.expo.abs() as u64;
 				precise_price = pyth_price.agg.price as u64;
-				ui_price = pyth_price.agg.price.
-					checked_div(
-						10_i64.pow(pyth_price.expo.abs() as u32)
-					)
-					.unwrap() as u64;
+				msg!(" in calc aum w/ expo {} precise price {}", pyth_price.expo, pyth_price.agg.price)
 			}
 
 			let price = pyth_price.agg.price;
@@ -295,7 +301,7 @@ fn calculate_aum(
 			msg!("about to return in calc aum");
 		}
 	}
-	Ok((aum, precise_price, ui_price, exponent))
+	Ok((aum, precise_price, exponent))
 }
 
 impl<'info> MintLpToken<'info> {

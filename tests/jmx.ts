@@ -120,9 +120,6 @@ describe('jmx', () => {
       8 // decimals
     );
 
-    console.log("fakeWSolMint", fakeWSolMint.toString())
-    console.log("fakeUsdcMint", fakeUsdcMint.toString())
-
     const tx = await program.rpc.initializeExchange(
       exchangeName,
       {
@@ -257,7 +254,6 @@ describe('jmx', () => {
     assert.equal(exchangeAccountData.assets[0].toString(), fakeUsdcMint.toString());
     assert.equal(exchangeAccountData.assets[1].toString(), fakeWSolMint.toString())
 
-    console.log("exchangeAccountData.price_oracles", exchangeAccountData)
     assert.equal(exchangeAccountData.priceOracles[0].toString(), usdcOraclePubkey.toString());
     assert.equal(exchangeAccountData.priceOracles[1].toString(), wSolOraclePubkey.toString())
     let availableAssetAccount = await provider.connection.getAccountInfo(
@@ -516,7 +512,15 @@ describe('jmx', () => {
       lpTokenAta,
       'confirmed'
     )
-    assert.equal(Number(user_lp_token_account.amount), 1000);
+
+    let availableAssetAccount = await provider.connection.getAccountInfo(
+      availableAssetPdaUsdc
+    );
+    let availableAssetAccountData = program.coder.accounts.decode('AvailableAsset', availableAssetAccount.data)
+
+    assert.equal(Number(availableAssetAccountData.poolReserves) === 1000, true);
+    assert.equal(Number(availableAssetAccountData.feeReserves) === 0, true);
+    assert.equal(Number(user_lp_token_account.amount) > 995, true);
 
     let tx2 = await program.rpc.mintLpToken(
       exchangeName,
@@ -551,10 +555,10 @@ describe('jmx', () => {
       lpTokenAta,
       'confirmed'
     )
-    let availableAssetAccount = await provider.connection.getAccountInfo(
+    availableAssetAccount = await provider.connection.getAccountInfo(
       availableAssetPdaUsdc
     );
-    const availableAssetAccountData = program.coder.accounts.decode('AvailableAsset', availableAssetAccount.data)
+    availableAssetAccountData = program.coder.accounts.decode('AvailableAsset', availableAssetAccount.data)
 
     assert.equal(availableAssetAccountData.poolReserves.toNumber() >= 1970, true);
     assert.equal(availableAssetAccountData.feeReserves.toNumber() >= 2, true);
