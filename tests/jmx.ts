@@ -557,6 +557,7 @@ describe('jmx', () => {
     const availableAssetAccountData = program.coder.accounts.decode('AvailableAsset', availableAssetAccount.data)
 
     assert.equal(availableAssetAccountData.poolReserves.toNumber() >= 1970, true);
+    assert.equal(availableAssetAccountData.feeReserves.toNumber() >= 2, true);
     assert.equal(Number(user_lp_token_account.amount) >= 1970, true);
     assert.equal(Number(user_lp_token_account.amount) <= 2030, true);
 
@@ -687,7 +688,8 @@ describe('jmx', () => {
     const availableAssetAccountData = program.coder.accounts.decode('AvailableAsset', availableAssetAccount.data)
     console.log("availableAssetAccountData sol", availableAssetAccountData.poolReserves.toNumber());
     console.log("Number(user_lp_token_account.amount)", Number(user_lp_token_account.amount))
-    assert.equal(availableAssetAccountData.poolReserves.toNumber() >= 20, true);
+    assert.equal(availableAssetAccountData.poolReserves.toNumber() >= 18, true);
+    assert.equal(availableAssetAccountData.feeReserves.toNumber() >= 1, true);
     assert.equal(Number(user_lp_token_account.amount) >= 3400, true);
     assert.equal(Number(user_lp_token_account.amount) <= 4000, true);
 

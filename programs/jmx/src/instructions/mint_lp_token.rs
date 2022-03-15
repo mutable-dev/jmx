@@ -85,12 +85,11 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 	let lp_mint_supply = lp_mint.supply;
 	let mut price_per_lp_token_numerator = 1;
 	let mut price_per_lp_token_denominator = 1;
+	let mut total_fee_in_basis_points = BASIS_POINTS_DIVISOR as u64;
+
 	if lp_mint_supply > 0 {
 		msg!("we have current aum:{:?} mint_supply: {:?}", aum, lp_mint_supply);
-		// CHECK: change decimals
-		// CHECK: need to give bonus or punishment to people who push the deposit closer/further from weights
-		// divide aum/supply (watch out for weird decimal conversion)
-		let total_fee_in_basis_points = calculate_fee_basis_points(
+		total_fee_in_basis_points = calculate_fee_basis_points(
 			aum,
 			&ctx.accounts.available_asset,
 			ctx.accounts.exchange.total_weights,
@@ -106,10 +105,6 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 		price_per_lp_token_denominator = lp_mint_supply.checked_mul(BASIS_POINTS_DIVISOR as u64)
 				.unwrap();
 	}
-
-	// find fx rate of asset to deposit and lp token
-	// CHECK: Need to update in future to give lower slippage to depositors who deposit 
-	// needed assets and penalize those putting in already had assets
 	
 	msg!("precise_price {}", precise_price);
 	let usd_value_of_deposit = ui_price.
@@ -124,6 +119,7 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 		unwrap().
 		checked_div(price_per_lp_token_numerator).
 		unwrap();
+
 	msg!("amount_of_glp_to_mint {}", amount_of_glp_to_mint);
 	let exchange_auth_bump = match ctx.bumps.get("exchange_authority") {
 			Some(bump) => {
@@ -150,7 +146,14 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 	token::mint_to(ctx.accounts.into_mint_to_context(signer), amount_of_glp_to_mint as u64)?;
 	// update reserve amounts on available asset
 	let asset = &mut ctx.accounts.available_asset;
-	asset.pool_reserves += lamports;
+	let new_pool_reserves = lamports.
+	checked_mul(BASIS_POINTS_DIVISOR as u64).
+	unwrap().
+	checked_div(total_fee_in_basis_points).
+	unwrap();
+
+	asset.pool_reserves += new_pool_reserves;
+	asset.fee_reserves += lamports - new_pool_reserves;
 	Ok(())
 }
 
@@ -231,8 +234,6 @@ fn calculate_fee_basis_points(
 	}
 
 	let mut average_diff = initial_diff.add(next_diff).div(2);
-	// need to factor in how bad the effect of the mint is
-	// at max badness the effect is just doubling the amount of the fee ~ 60bps
 	msg!("average_diff {}", average_diff);
 	if average_diff > target_lp_usd_value as i64{
 		average_diff = target_lp_usd_value as i64;
@@ -264,9 +265,7 @@ fn calculate_aum(
 			last_token_account = unpacked_token_account;
 		} else {
 			// oracle account
-			// CHECK: need to check for decimals better here
 			// CHECK: need to validate pyth data better here
-			// https://github.com/pyth-network/pyth-examples/blob/main/program/src/lib.rs#L49
 			assert!(price_oracles.contains(token_account_info.key), "invalid oracle account provided");
 
 			let pyth_price_data = &token_account_info.try_borrow_data()?;
@@ -286,6 +285,7 @@ fn calculate_aum(
 					)
 					.unwrap() as u64;
 			}
+
 			let price = pyth_price.agg.price;
 			msg!("about to add to aum in calc aum");
 			aum += last_token_account.amount.checked_mul(price as u64)
