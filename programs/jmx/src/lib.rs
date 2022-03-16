@@ -40,6 +40,10 @@ pub mod jmx {
     pub fn burn_lp_token(ctx: Context<BurnLpToken>, exchange_name: String, asset_name: String, lamports: u64) -> ProgramResult {
         instructions::burn_lp_token::handler(ctx, exchange_name, asset_name, lamports)
     }
+
+    pub fn swap(ctx: Context<Swap>, exchange_name: String, asset_name: String, lamports: u64) -> ProgramResult {
+        instructions::swap::handler(ctx, exchange_name, asset_name, lamports)
+    }
 }
 
 #[macro_export]

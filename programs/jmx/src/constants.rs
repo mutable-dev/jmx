@@ -15,6 +15,10 @@ pub const BASIS_POINTS_DIVISOR: u16 = 10000;
 #[constant]
 pub const FEE_IN_BASIS_POINTS: u16 = 10030;
 #[constant]
+pub const MAIN_ASSET_SWAP_FEE_IN_BASIS_POINTS: u16 = 8;
+#[constant]
+pub const STABLE_ASSET_SWAP_FEE_IN_BASIS_POINTS: u16 = 4;
+#[constant]
 pub const PENALTY_IN_BASIS_POINTS: u16 = 60;
 #[constant]
 pub const USDC: &str = "usdc";
