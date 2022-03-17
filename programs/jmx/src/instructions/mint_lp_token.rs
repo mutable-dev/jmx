@@ -206,7 +206,7 @@ pub fn calculate_fee_basis_points(
 		initial_reserve_usd_value + diff_usd_value 
 	} else { 
 		msg!("maxxx initial_reserve_usd_value - diff_usd_value {}", initial_reserve_usd_value - diff_usd_value);
-		max(initial_reserve_usd_value - diff_usd_value, 0)
+		max((initial_reserve_usd_value - diff_usd_value) as i64, 0 as i64) as u64
 	};
 	
 	msg!("cur token weight {}", available_asset.token_weight);

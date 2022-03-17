@@ -742,8 +742,8 @@ describe('jmx', () => {
     // console.log("wSolPoolFees", wSolPoolFees)
     // console.log("wSolExchangeTokenAccount", Number(wSolExchangeTokenAccount.amount))
     // console.log("user_lp_token_account.amount", user_lp_token_account.amount)
-    assert.equal(wSolPoolReserves, 1292);
-    assert.equal(wSolPoolFees, 7);
+    assert.equal(wSolPoolReserves, 1291);
+    assert.equal(wSolPoolFees, 8);
     assert.equal(Number(wSolExchangeTokenAccount.amount), 1299);
     assert.equal(Number(user_lp_token_account.amount) >= 270000, true);
     assert.equal(Number(user_lp_token_account.amount) <= 330000, true);
@@ -829,8 +829,8 @@ describe('jmx', () => {
 
     assert.equal(Number(beforeUsdcUserTokenAccount.amount), Number(usdcUserTokenAccount.amount) + baseUsdcMintLamports)
     assert.equal(Number(wSolExchangeTokenAccount.amount), 304)
-    assert.equal(wSolPoolReserves, 292);
-    assert.equal(wSolPoolFees, 12);
+    assert.equal(wSolPoolReserves, 291);
+    assert.equal(wSolPoolFees, 13);
     assert.equal(Number(wSolExchangeTokenAccount.amount), wSolPoolReserves + wSolPoolFees);
   })
 });
