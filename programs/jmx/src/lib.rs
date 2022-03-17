@@ -44,6 +44,14 @@ pub mod jmx {
     pub fn swap(ctx: Context<Swap>, exchange_name: String, ia: String, oa: String, lamports: u64) -> ProgramResult {
         instructions::swap::handler(ctx, exchange_name, ia, oa, lamports)
     }
+
+    pub fn initialize_position(ctx: Context<InitializePosition>, exchange_name: String, asset_name: String) -> ProgramResult {
+        instructions::initialize_position::handler(ctx, exchange_name, asset_name)
+    }
+
+    // pub fn increase_position(ctx: Context<Swap>, exchange_name: String, ia: String, oa: String, lamports: u64) -> ProgramResult {
+    //     instructions::increase_position::handler(ctx, exchange_name, ia, oa, lamports)
+    // }
 }
 
 #[macro_export]

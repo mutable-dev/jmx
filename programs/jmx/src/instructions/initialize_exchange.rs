@@ -15,7 +15,7 @@ pub struct InitializeExchange<'info> {
         seeds = [exchange_name.as_bytes()],
         bump,
         payer = exchange_admin,
-				space = Exchange::LEN,
+		space = Exchange::LEN,
     )]
     pub exchange: Box<Account<'info, Exchange>>,
     /// CHECK: this is our authority, no checked account required

@@ -2,45 +2,14 @@ import * as anchor from '@project-serum/anchor';
 import { Program } from '@project-serum/anchor';
 import { TOKEN_PROGRAM_ID, createMint, mintToChecked, createAssociatedTokenAccount, getAccount } from "@solana/spl-token";
 import BN from 'bn.js';
-import { Struct, PublicKey } from '@solana/web3.js';
 import { Jmx } from '../target/types/jmx';
 import assert from "assert";
 import {
   createPriceFeed,
-  setFeedPriceInstruction,
-  getFeedData,
 } from "./pyth/oracleUtils";
+import { AvailableAsset, Position } from './constants';
 
 const pythProgram = anchor.workspace.Pyth as Program<Pyth>;
-
-
-class AvailableAsset extends Struct {
-  mintAddress: PublicKey;
-	/// the decimals for the token
-	tokenDecimals: BN;
-	/// The weight of this token in the LP 
-	tokenWeight: BN;
-	/// min about of profit a position needs to be in to take profit before time
-	minProfitBasisPoints: BN;
-	/// maximum amount of this token that can be in the pool
-	maxLptokenAmount: BN;
-	/// Flag for whether this is a stable token
-	stableToken: boolean;
-	/// Flag for whether this asset is shortable
-	shortableToken: boolean;
-	/// The cumulative funding rate for the asset
-	cumulativeFundingRate: BN;
-	/// Last time the funding rate was updated
-	lastFundingTime: BN;
-	/// Account with price oracle data on the asset
-	oracleAddress: PublicKey;
-	/// Backup account with price oracle data on the asset
-	backupOracleAddress: PublicKey;
-	/// Global size of shorts denominated in kind
-	globalShortSize: BN;
-	/// Represents the total outstanding obligations of the protocol (position - size) for the asset
-	netProtocolLiabilities: BN
-}
 
 const exchangeAuthoritySeed = 'exchange-authority'
 const baseUsdcMintLamports = 100000
@@ -67,10 +36,9 @@ describe('jmx', () => {
   exchangeUSDCPda,
   fakeWSolAta,
   fakeUsdcAta,
-  usdcPriceFeedAddress,
-  wSolpriceFeedAddress,
   usdcOraclePubkey,
-  wSolOraclePubkey;
+  wSolOraclePubkey,
+  wSolPositionPda;
 
   const fakeUsdcPrice = 1;
   const fakeWSolPrice = 100;
@@ -822,16 +790,56 @@ describe('jmx', () => {
     let wSolPoolReserves = availableAssetAccountData.poolReserves.toNumber()
     let wSolPoolFees = availableAssetAccountData.feeReserves.toNumber()
 
-    console.log("wSolPoolReserves", wSolPoolReserves)
-    console.log("wSolPoolFees", wSolPoolFees)
-    console.log("wSolExchangeTokenAccount", Number(wSolExchangeTokenAccount.amount))
-    console.log("beforeUsdcUserTokenAccount.amount", Number(beforeUsdcUserTokenAccount.amount))
+    // console.log("wSolPoolReserves", wSolPoolReserves)
+    // console.log("wSolPoolFees", wSolPoolFees)
+    // console.log("wSolExchangeTokenAccount", Number(wSolExchangeTokenAccount.amount))
+    // console.log("beforeUsdcUserTokenAccount.amount", Number(beforeUsdcUserTokenAccount.amount))
 
     assert.equal(Number(beforeUsdcUserTokenAccount.amount), Number(usdcUserTokenAccount.amount) + baseUsdcMintLamports)
     assert.equal(Number(wSolExchangeTokenAccount.amount), 304)
     assert.equal(wSolPoolReserves, 291);
     assert.equal(wSolPoolFees, 13);
     assert.equal(Number(wSolExchangeTokenAccount.amount), wSolPoolReserves + wSolPoolFees);
+  })
+
+  it('initializes a position account', async () => {
+    const provider = anchor.Provider.env()
+    anchor.setProvider(provider);
+
+    [wSolPositionPda] = await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(exchangeName), exchangeAdmin.publicKey.toBytes(), availableAssetPdaWSol.toBytes()],
+      program.programId
+    );
+
+    let tx = await program.rpc.initializePosition(
+      exchangeName,
+      wSolSeed,
+      {
+        accounts: {
+          user: exchangeAdmin.publicKey,
+          position: wSolPositionPda,
+          availableAsset: availableAssetPdaWSol,
+          exchange: exchangePda,
+          exchangeAuthority: exchangeAuthorityPda,
+          collateralMint: fakeWSolMint,
+          //System stuff
+          systemProgram: anchor.web3.SystemProgram.programId,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        signers: [
+          exchangeAdmin
+        ]
+      }
+    );
+
+    let positionAccount = await provider.connection.getAccountInfo(
+      wSolPositionPda
+    );
+    const exchangeAccountData = program.coder.accounts.decode('Position', positionAccount.data)
+    assert.equal(exchangeAccountData.owner.toString(), exchangeAdmin.publicKey.toString());
+    assert.equal(exchangeAccountData.collateralMint.toString(), fakeWSolMint.toString());
+    assert.equal(exchangeAccountData.size, 0);
   })
 });
 

@@ -5,7 +5,9 @@ pub mod init_lp_ata;
 pub mod mint_lp_token;
 pub mod burn_lp_token;
 pub mod swap;
+pub mod initialize_position;
 
+pub use initialize_position::*;
 pub use swap::*;
 pub use initialize_exchange::*;
 pub use update_asset_whitelist::*;
