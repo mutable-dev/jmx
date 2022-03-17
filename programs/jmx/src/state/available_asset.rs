@@ -31,7 +31,7 @@ pub struct AvailableAsset {
 	/// Represents the total outstanding obligations of the protocol (position - size) for the asset
 	pub net_protocol_liabilities: u64,
 	/// Assets that are reserved and having positions trading against them
-	pub occupied_assets: u64,
+	pub occupied_reserves: u64,
 	/// Represents how much in reserves the pool owns of the available asset from fees
 	pub fee_reserves: u64,
 	/// Represents the unoccupied + occupied amount of assets in the pool for trading 

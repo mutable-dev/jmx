@@ -71,7 +71,7 @@ pub fn handler(ctx: Context<InitializeAvailableAsset>, exchange_name: String, as
 	asset.global_short_size = 0;
 	asset.net_protocol_liabilities = 0; 
 	asset.token_weight = asset_data.token_weight;
-	asset.occupied_assets = 0;
+	asset.occupied_reserves = 0;
 	asset.fee_reserves = 0;
 	asset.pool_reserves = 0;
 

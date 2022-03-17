@@ -66,6 +66,7 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 		ctx.remaining_accounts.len() / 2 == ctx.accounts.exchange.assets.len(), 
 		"must supply all whitelisted assets when minting"
 	);
+	assert!(lamports > 100, "too few lamports for transaction");
 
 	// transfer lamports from user to reserve_asset_token_acount
 	let exchange_reserve_token = &ctx.accounts.exchange_reserve_token;
@@ -84,7 +85,7 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 	let lp_mint_supply = lp_mint.supply;
 	let mut price_per_lp_token_numerator = 1;
 	let mut price_per_lp_token_denominator = 1;
-	let mut total_fee_in_basis_points = BASIS_POINTS_DIVISOR as u64;
+	let mut total_fee_in_basis_points = BASIS_POINTS_PRECISION as u64;
 
 	if lp_mint_supply > 0 {
 		msg!("we have current aum:{:?} mint_supply: {:?}", aum, lp_mint_supply);
@@ -97,13 +98,16 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 			lamports,
 			true
 		);
-		msg!("FEE_IN_BASIS_POINTS {}", FEE_IN_BASIS_POINTS);
+		// msg!("FEE_IN_BASIS_POINTS {}", FEE_IN_BASIS_POINTS);
 		msg!("total_fee_in_basis_points {}", total_fee_in_basis_points);
-		price_per_lp_token_numerator = aum.checked_mul(total_fee_in_basis_points as u64)
-			.unwrap();
-
-		price_per_lp_token_denominator = lp_mint_supply.checked_mul(BASIS_POINTS_DIVISOR as u64)
+		let raw_bps_to_charge = total_fee_in_basis_points.checked_sub(BASIS_POINTS_PRECISION as u64).unwrap();
+		price_per_lp_token_numerator = lp_mint_supply.checked_mul(BASIS_POINTS_PRECISION - raw_bps_to_charge as u64)
+		.unwrap();
+		
+		price_per_lp_token_denominator = aum.checked_mul(BASIS_POINTS_PRECISION)
 				.unwrap();
+		msg!("price_per_lp_token_numerator {} price_per_lp_token_denominator {}", price_per_lp_token_numerator, price_per_lp_token_denominator);
+		msg!("raw_bps_to_charge {}", raw_bps_to_charge)
 	}
 	
 	msg!("precise_price {}", precise_price);
@@ -113,14 +117,14 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 		checked_div(10_u128.pow(exponent as u32) as u64).
 		unwrap();
 	
-	msg!("numerator price_per_lp_token_numerator {}", price_per_lp_token_numerator);
-	msg!("denom price_per_lp_token_denominator {}", price_per_lp_token_denominator);
+	// msg!("numerator price_per_lp_token_numerator {}", price_per_lp_token_numerator);
+	// msg!("denom price_per_lp_token_denominator {}", price_per_lp_token_denominator);
 	msg!("usd_value_of_deposit {}", usd_value_of_deposit);
-	let amount_of_glp_to_mint = usd_value_of_deposit.
-		checked_mul(price_per_lp_token_denominator).
+	let amount_of_glp_to_mint = (usd_value_of_deposit as u128).
+		checked_mul(price_per_lp_token_numerator as u128).
 		unwrap().
-		checked_div(price_per_lp_token_numerator).
-		unwrap();
+		checked_div(price_per_lp_token_denominator as u128).
+		unwrap() as u64;
 
 	msg!("amount_of_glp_to_mint {}", amount_of_glp_to_mint);
 	let exchange_auth_bump = match ctx.bumps.get("exchange_authority") {
@@ -149,7 +153,7 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 	// update reserve amounts on available asset
 	let asset = &mut ctx.accounts.available_asset;
 	let new_pool_reserves = lamports.
-	checked_mul(BASIS_POINTS_DIVISOR as u64).
+	checked_mul(BASIS_POINTS_PRECISION as u64).
 	unwrap().
 	checked_div(total_fee_in_basis_points).
 	unwrap();
@@ -169,6 +173,9 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 // 7. initialAmount is above targetAmount, nextAmount is below targetAmount and vice versa
 // 8. a large swap should have similar fees as the same trade split into multiple smaller swaps
 /// CHECK: types here are bad, and conversions too many, need to consolidate
+/// CHECK: that we are doing the correct math when calculating
+/// fees that should be charged 
+/// CHECK: that we are calculating available assets correctly
 pub fn calculate_fee_basis_points(
 	aum: u64,
 	available_asset: &Account<'_, AvailableAsset, >, 
@@ -178,9 +185,9 @@ pub fn calculate_fee_basis_points(
 	new_amount: u64,
 	increment: bool
 ) -> u64 {
-	let current_reserves = available_asset.pool_reserves - available_asset.fee_reserves;
+	let current_reserves = available_asset.pool_reserves - available_asset.occupied_reserves;
 	msg!("price {}", price);
-	msg!("exponent {}", exponent);
+	msg!("exponent in calc fee bps {}", exponent);
 	let initial_reserve_usd_value = (current_reserves).
 		checked_mul(price as u64).
 		unwrap().
@@ -188,14 +195,17 @@ pub fn calculate_fee_basis_points(
 		.unwrap();
 
 	let diff_usd_value = new_amount.
-	checked_mul(price as u64).
-	unwrap().
-	checked_div(10_i64.pow(exponent as u32) as u64)
-	.unwrap();
+		checked_mul(price as u64).
+		unwrap().
+		checked_div(10_u128.pow(exponent as u32) as u64)
+		.unwrap();
 
+	msg!("new amount {}", new_amount);
 	let next_reserve_usd_value = if increment { 
+		msg!("next reserve value {}", initial_reserve_usd_value + diff_usd_value);
 		initial_reserve_usd_value + diff_usd_value 
 	} else { 
+		msg!("maxxx initial_reserve_usd_value - diff_usd_value {}", initial_reserve_usd_value - diff_usd_value);
 		max(initial_reserve_usd_value - diff_usd_value, 0)
 	};
 	
@@ -207,6 +217,7 @@ pub fn calculate_fee_basis_points(
 		checked_div(total_weight).
 		unwrap();
 
+	msg!("diff_usd_value {}", diff_usd_value);
 	msg!("current_reserves {}", current_reserves);
 	msg!("initial_reserve_usd_value {}", initial_reserve_usd_value);
 	msg!("next_reserve_usd_value {}", next_reserve_usd_value );
@@ -216,33 +227,35 @@ pub fn calculate_fee_basis_points(
 		return FEE_IN_BASIS_POINTS as u64;
 	}
 
-	let initial_diff = if initial_reserve_usd_value > target_lp_usd_value { 
+	let initial_usd_from_target = if initial_reserve_usd_value > target_lp_usd_value { 
 		(initial_reserve_usd_value - target_lp_usd_value) as i64
 	} else { (target_lp_usd_value - initial_reserve_usd_value) as i64 };
 
-	let next_diff = if next_reserve_usd_value > target_lp_usd_value { 
+	let next_usd_from_target = if next_reserve_usd_value > target_lp_usd_value { 
 		(next_reserve_usd_value - target_lp_usd_value) as i64
 	} else { (target_lp_usd_value - next_reserve_usd_value) as i64 };
 
 	// action improves target balance
-	if next_diff < initial_diff {
-		msg!("next_diff {} initial_diff {}", next_diff, initial_diff);
+	if next_usd_from_target < initial_usd_from_target {
+		msg!("next_usd_from_target {} initial_usd_from_target {}", next_usd_from_target, initial_usd_from_target);
 		let rebate_bps = (FEE_IN_BASIS_POINTS as i64).
-			checked_sub(BASIS_POINTS_DIVISOR as i64).
+			checked_sub(BASIS_POINTS_PRECISION as i64).
 			unwrap().
-			checked_mul(initial_diff).
+			checked_mul(initial_usd_from_target).
 			unwrap().
 			checked_div(target_lp_usd_value as i64).
 			unwrap();
-		msg!("rebate bps {}", rebate_bps);
-		return if rebate_bps >= FEE_IN_BASIS_POINTS as i64 {
-			BASIS_POINTS_DIVISOR as u64
+		msg!("rebate bps {} initial_usd_from_target {} target_lp_usd_value {}", rebate_bps, initial_usd_from_target, target_lp_usd_value);
+		return if rebate_bps >= FEE_RAW as i64 {
+			msg!("returning precision");
+			BASIS_POINTS_PRECISION as u64
 		} else { 
+			msg!("returning (FEE_IN_BASIS_POINTS as i64).sub(rebate_bps ) {}", (FEE_IN_BASIS_POINTS as i64).sub(rebate_bps ));
 			(FEE_IN_BASIS_POINTS as i64).sub(rebate_bps ) as u64 
 		};
 	}
 
-	let mut average_diff = initial_diff.add(next_diff).div(2);
+	let mut average_diff = initial_usd_from_target.add(next_usd_from_target).div(2);
 	msg!("average_diff {}", average_diff);
 	if average_diff > target_lp_usd_value as i64{
 		average_diff = target_lp_usd_value as i64;
@@ -257,13 +270,16 @@ pub fn calculate_aum(
 	exchange_reserve_token: &Box<anchor_lang::prelude::Account<'_, TokenAccount>>,
 	price_oracles: &Vec<anchor_lang::prelude::Pubkey>
 ) -> Result<(u64,u64,u64)> {
+	for o in price_oracles.iter() {
+		msg!("{}", o);
+	}
 	let mut aum = 0;
 	let mut precise_price = 0;
 	let mut exponent = 1;
 	let mut last_token_account: SPLTokenAccount = SPLTokenAccount::unpack_unchecked(&remaining_accounts[0].data.borrow())?;
 	// msg!("remaining_accounts {:?}", remaining_accounts);
 	for (i, token_account_info) in remaining_accounts.iter().enumerate() {
-		msg!("iterating {}", i);
+		// msg!("iterating {}", i);
 		if i % 2 == 0 {
 			// token account
 			if token_account_info.owner != &spl_token::id() {
@@ -274,31 +290,35 @@ pub fn calculate_aum(
 		} else {
 			// oracle account
 			// CHECK: need to validate pyth data better here
+			// msg!("data key {}", token_account_info.key);
 			assert!(price_oracles.contains(token_account_info.key), "invalid oracle account provided");
 
 			let pyth_price_data = &token_account_info.try_borrow_data()?;
-			msg!("after borrow price data {}", &token_account_info.key);
+			// msg!("after borrow price data {}", &token_account_info.key);
+			// msg!("Pyth Price size {} account size {}", std::mem::size_of::<pyth_client::Price>(), pyth_price_data.len());
 			let pyth_price = pyth_client::cast::<pyth_client::Price>(pyth_price_data);
 			// get price of asset to deposit
 
-			msg!("last_token_account.mint {}", last_token_account.mint);
-			msg!("exchange_reserve_token.mint {}", exchange_reserve_token.mint);
+			// msg!("last_token_account.mint {}", last_token_account.mint);
+			// msg!("exchange_reserve_token.mint {}", exchange_reserve_token.mint);
 			if last_token_account.mint == exchange_reserve_token.mint {
-				msg!("found price oracle for reserve asset...about to set reserve asset price {}", pyth_price.agg.price);
+				msg!("found last_token_account.mint {}", last_token_account.mint);
+				msg!("exchange_reserve_token.mint {}", exchange_reserve_token.mint);
+				// msg!("found price oracle for reserve asset...about to set reserve asset price {}", pyth_price.agg.price);
 				exponent = pyth_price.expo.abs() as u64;
 				precise_price = pyth_price.agg.price as u64;
-				msg!(" in calc aum w/ expo {} precise price {}", pyth_price.expo, pyth_price.agg.price)
+				// msg!(" in calc aum w/ expo {} precise price {}", pyth_price.expo, pyth_price.agg.price)
 			}
 
 			let price = pyth_price.agg.price;
-			msg!("about to add to aum in calc aum");
+			// msg!("about to add to aum in calc aum");
 			aum += last_token_account.amount.checked_mul(price as u64)
 				.unwrap()
 				.checked_div(
 					10_u64.pow(pyth_price.expo.abs() as u32)
 				)
 				.unwrap();
-			msg!("about to return in calc aum");
+			// msg!("about to return in calc aum");
 		}
 	}
 	Ok((aum, precise_price, exponent))

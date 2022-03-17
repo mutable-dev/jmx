@@ -56,11 +56,12 @@ pub struct BurnLpToken<'info> {
 
 // CHECK: need to check that oracle account provided matches oracle account in available asset
 pub fn handler(ctx: Context<BurnLpToken>, exchange_name: String, asset_name: String, lamports: u64) -> ProgramResult {
+	assert!(lamports > 100, "too few lamports for transaction");
 	assert!(
 		ctx.remaining_accounts.len() / 2 == ctx.accounts.exchange.assets.len(), 
 		"must supply all whitelisted assets when burning"
 	);
-	assert!(ctx.accounts.lp_mint.supply > 0, "no lp token exists");
+	assert!(ctx.accounts.lp_mint.supply > lamports, "not enough lp token exists");
 
 	// transfer lamports from user to reserve_asset_token_acount
 	let exchange_reserve_token = &ctx.accounts.exchange_reserve_token;
@@ -91,7 +92,7 @@ pub fn handler(ctx: Context<BurnLpToken>, exchange_name: String, asset_name: Str
 	let price_per_lp_token_numerator = aum.checked_mul(total_fee_in_basis_points as u64)
 		.unwrap();
 
-	let price_per_lp_token_denominator = lp_mint_supply.checked_mul(BASIS_POINTS_DIVISOR as u64)
+	let price_per_lp_token_denominator = lp_mint_supply.checked_mul(BASIS_POINTS_PRECISION as u64)
 			.unwrap();
 	
 	msg!("precise_price {}", precise_price);
@@ -124,7 +125,7 @@ pub fn handler(ctx: Context<BurnLpToken>, exchange_name: String, asset_name: Str
 	};
 
 	let transfer_reserve_amount = burn_value_to_reserve_amount.
-	checked_mul(BASIS_POINTS_DIVISOR as u64).
+	checked_mul(BASIS_POINTS_PRECISION as u64).
 	unwrap().
 	checked_div(total_fee_in_basis_points).
 	unwrap();
