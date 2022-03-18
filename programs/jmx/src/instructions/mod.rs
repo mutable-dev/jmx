@@ -6,7 +6,9 @@ pub mod mint_lp_token;
 pub mod burn_lp_token;
 pub mod swap;
 pub mod initialize_position;
+pub mod increase_position;
 
+pub use increase_position::*;
 pub use initialize_position::*;
 pub use swap::*;
 pub use initialize_exchange::*;

@@ -841,6 +841,46 @@ describe('jmx', () => {
     assert.equal(exchangeAccountData.collateralMint.toString(), fakeWSolMint.toString());
     assert.equal(exchangeAccountData.size, 0);
   })
+
+  it('increases the size of a position', async () => {
+    const provider = anchor.Provider.env()
+    anchor.setProvider(provider);
+
+    [wSolPositionPda] = await anchor.web3.PublicKey.findProgramAddress(
+      [Buffer.from(exchangeName), exchangeAdmin.publicKey.toBytes(), availableAssetPdaWSol.toBytes()],
+      program.programId
+    );
+
+    let tx = await program.rpc.increasePosition(
+      exchangeName,
+      wSolSeed,
+      {
+        accounts: {
+          user: exchangeAdmin.publicKey,
+          position: wSolPositionPda,
+          availableAsset: availableAssetPdaWSol,
+          exchange: exchangePda,
+          exchangeAuthority: exchangeAuthorityPda,
+          collateralMint: fakeWSolMint,
+          //System stuff
+          systemProgram: anchor.web3.SystemProgram.programId,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        signers: [
+          exchangeAdmin
+        ]
+      }
+    );
+
+    let positionAccount = await provider.connection.getAccountInfo(
+      wSolPositionPda
+    );
+    const exchangeAccountData = program.coder.accounts.decode('Position', positionAccount.data)
+    assert.equal(exchangeAccountData.owner.toString(), exchangeAdmin.publicKey.toString());
+    assert.equal(exchangeAccountData.collateralMint.toString(), fakeWSolMint.toString());
+    assert.equal(exchangeAccountData.size, 0);
+  })
 });
 
 export function sleep(ms) {

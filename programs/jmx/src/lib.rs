@@ -49,9 +49,9 @@ pub mod jmx {
         instructions::initialize_position::handler(ctx, exchange_name, asset_name)
     }
 
-    // pub fn increase_position(ctx: Context<Swap>, exchange_name: String, ia: String, oa: String, lamports: u64) -> ProgramResult {
-    //     instructions::increase_position::handler(ctx, exchange_name, ia, oa, lamports)
-    // }
+    pub fn increase_position(ctx: Context<IncreasePosition>, exchange_name: String, asset_name: String) -> ProgramResult {
+        instructions::increase_position::handler(ctx, exchange_name, asset_name)
+    }
 }
 
 #[macro_export]
