@@ -1,8 +1,10 @@
 use anchor_lang::prelude::*;
+use spl_token::*;
+use serde::{Serialize, Deserialize};
 
 /// Represents whitelisted assets on the dex
 #[account]
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct AvailableAsset {
 		/// Mint address of the available asset
 	pub mint_address: Pubkey,

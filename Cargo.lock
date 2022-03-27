@@ -751,7 +751,9 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang 0.22.1",
  "anchor-spl",
+ "bincode",
  "pyth-client",
+ "serde",
  "solana-program",
  "spl-token",
 ]

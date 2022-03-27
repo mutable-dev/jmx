@@ -9,6 +9,7 @@ use crate::constants::*;
 use crate::*;
 use crate::error::{ErrorCode};
 use std::cmp::max;
+use std::convert::TryInto;
 
 // need to check that the mint provided matches the redeemable mint
 // CHECK: that mints and provided assets match for all provided accounts
@@ -61,6 +62,7 @@ pub struct MintLpToken<'info> {
 }
 
 // CHECK: need to check that oracle account provided matches oracle account in available asset
+// CHECK: need to evauluate the max amount of the provided token we will accept and not go over that
 pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: String, lamports: u64) -> ProgramResult {
 	assert!(
 		ctx.remaining_accounts.len() / 2 == ctx.accounts.exchange.assets.len(), 
@@ -176,16 +178,18 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 /// CHECK: that we are doing the correct math when calculating
 /// fees that should be charged 
 /// CHECK: that we are calculating available assets correctly
+/// CHECK: that we should calculate the current reserves to compare against target reserves using 
+/// only the available asset, relies on how AUM is calculated
 pub fn calculate_fee_basis_points(
 	aum: u64,
-	available_asset: &Account<'_, AvailableAsset, >, 
+	available_asset: &AvailableAsset, 
 	total_weight: u64, 
 	price: u64,
 	exponent: u64,
 	new_amount: u64,
 	increment: bool
 ) -> u64 {
-	let current_reserves = available_asset.pool_reserves - available_asset.occupied_reserves;
+	let current_reserves = available_asset.pool_reserves;
 	msg!("price {}", price);
 	msg!("exponent in calc fee bps {}", exponent);
 	let initial_reserve_usd_value = (current_reserves).
@@ -253,6 +257,8 @@ pub fn calculate_fee_basis_points(
 			msg!("returning (FEE_IN_BASIS_POINTS as i64).sub(rebate_bps ) {}", (FEE_IN_BASIS_POINTS as i64).sub(rebate_bps ));
 			(FEE_IN_BASIS_POINTS as i64).sub(rebate_bps ) as u64 
 		};
+	} else if next_usd_from_target == initial_usd_from_target {
+		return FEE_IN_BASIS_POINTS
 	}
 
 	let mut average_diff = initial_usd_from_target.add(next_usd_from_target).div(2);
@@ -265,6 +271,8 @@ pub fn calculate_fee_basis_points(
 	return (FEE_IN_BASIS_POINTS as u64).add(penalty as u64)
 }
 
+// CHECK: that we should take the value of the token account as AUM and not the general reserves from the
+// available asset account
 pub fn calculate_aum(
 	remaining_accounts: &[AccountInfo], 
 	exchange_reserve_token: &Box<anchor_lang::prelude::Account<'_, TokenAccount>>,
@@ -345,5 +353,206 @@ impl<'info> MintLpToken<'info> {
 			};
 			let cpi_program = self.token_program.to_account_info();
 			CpiContext::new_with_signer(cpi_program, cpi_accounts, signer)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+    use anchor_lang::prelude::{Pubkey};
+		use crate::calculate_fee_basis_points;
+    use crate::state::AvailableAsset;
+
+    #[test]
+    fn exploration() {
+        assert_eq!(2 + 2, 4);
+    }
+
+		fn create_available_asset() -> AvailableAsset {
+			AvailableAsset {
+				mint_address: Pubkey::from_str("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS").unwrap(),
+				token_decimals: 1,
+				token_weight: 5,
+				min_profit_basis_points: 100,
+				max_lptoken_amount: 100,
+				stable_token: false,
+				shortable_token: false,
+				cumulative_funding_rate: 0,
+				last_funding_time: 0,
+				oracle_address: Pubkey::from_str("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS").unwrap(),
+				backup_oracle_address: Pubkey::from_str("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS").unwrap(),
+				global_short_size: 0,
+				net_protocol_liabilities: 0,
+				occupied_reserves: 0,
+				fee_reserves: 0,
+				pool_reserves: 400
+			}
+		}
+
+    #[test]
+    fn slightly_improves_basket_add() {
+				let available_asset = create_available_asset();
+				let fees = calculate_fee_basis_points(
+					100_000,
+					&available_asset,
+					10,
+					100_0000,
+					4,
+					100,
+					true
+				);
+				assert_eq!(10024, fees);
+    }
+
+		#[test]
+		fn strongly_improves_basket_add() {
+			let available_asset = &mut create_available_asset();
+			available_asset.pool_reserves = 4;
+
+			let fees = calculate_fee_basis_points(
+				100_000,
+				&available_asset,
+				10,
+				100_0000,
+				4,
+				100,
+				true
+			);
+			assert_eq!(10001, fees);
+	}
+
+	#[test]
+	fn strongly_harms_basket_add() {
+		let available_asset = &mut create_available_asset();
+		available_asset.pool_reserves = 500;
+
+		let fees = calculate_fee_basis_points(
+			100_000,
+			&available_asset,
+			10,
+			100_0000,
+			4,
+			10000,
+			true
+		);
+		assert_eq!(10060, fees);
+	}
+
+	#[test]
+	fn lightly_harms_basket_add() {
+		let available_asset = &mut create_available_asset();
+		available_asset.pool_reserves = 500;
+
+		let fees = calculate_fee_basis_points(
+			100_000,
+			&available_asset,
+			10,
+			100_0000,
+			4,
+			50,
+			true
+		);
+		assert_eq!(10031, fees);
+	}
+
+	#[test]
+	fn slightly_improves_basket_remove() {
+			let available_asset = &mut create_available_asset();
+			available_asset.pool_reserves = 550;
+			let fees = calculate_fee_basis_points(
+				100_000,
+				&available_asset,
+				10,
+				100_0000,
+				4,
+				10,
+				false
+			);
+			assert_eq!(10027, fees);
+	}
+	
+	#[test]
+	fn strongly_improves_basket_remove() {
+		let available_asset = &mut create_available_asset();
+		available_asset.pool_reserves = 1000;
+
+		let fees = calculate_fee_basis_points(
+			100_000,
+			&available_asset,
+			10,
+			100_0000,
+			4,
+			100,
+			false
+		);
+		assert_eq!(10000, fees);
+	}
+
+	#[test]
+	fn strongly_harms_basket_remove() {
+		let available_asset = &mut create_available_asset();
+		available_asset.pool_reserves = 10;
+
+		let fees = calculate_fee_basis_points(
+			100_000,
+			&available_asset,
+			10,
+			100_0000,
+			4,
+			5,
+			false
+		);
+		assert_eq!(10059, fees);
+	}
+
+	#[test]
+	fn lightly_harms_basket_remove() {
+		let available_asset = &mut create_available_asset();
+		available_asset.pool_reserves = 500;
+
+		let fees = calculate_fee_basis_points(
+			100_000,
+			&available_asset,
+			10,
+			100_0000,
+			4,
+			50,
+			false
+		);
+		assert_eq!(10031, fees);
+	}
+
+	#[test]
+	fn neutral_basket_remove() {
+		let available_asset = &mut create_available_asset();
+		available_asset.pool_reserves = 550;
+
+		let fees = calculate_fee_basis_points(
+			100_000,
+			&available_asset,
+			10,
+			100_0000,
+			4,
+			100,
+			false
+		);
+		assert_eq!(10030, fees);
+	}
+
+	#[test]
+	fn neutral_basket_add() {
+		let available_asset = &mut create_available_asset();
+		available_asset.pool_reserves = 450;
+
+		let fees = calculate_fee_basis_points(
+			100_000,
+			&available_asset,
+			10,
+			100_0000,
+			4,
+			100,
+			true
+		);
+		assert_eq!(10030, fees);
 	}
 }
