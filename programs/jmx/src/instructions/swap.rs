@@ -95,19 +95,20 @@ pub fn handler(
 	let output_exchange_reserve_token = &ctx.accounts.output_exchange_reserve_token;
 	// msg!("lamports {}", lamports);
 
-	let (oracles, available_assets) = get_price_and_available_assets(ctx.remaining_accounts);
+	let (oracles, available_assets) = get_price_and_available_assets(
+		ctx.remaining_accounts,
+		&ctx.accounts.exchange.price_oracles
+	);
 	let (aum, input_precise_price, input_exponent) = calculate_aum(
 		&oracles, 
 		&available_assets, 
 		input_exchange_reserve_token,
-		&ctx.accounts.exchange.price_oracles
 	).unwrap();
 
 	let (aum, output_precise_price, output_exponent) = calculate_aum(
 		&oracles, 
 		&available_assets,
 		output_exchange_reserve_token,
-		&ctx.accounts.exchange.price_oracles
 	).unwrap();
 
 	msg!("output_exponent {} input precise price {} lamports {}",output_exponent, input_precise_price, lamports );

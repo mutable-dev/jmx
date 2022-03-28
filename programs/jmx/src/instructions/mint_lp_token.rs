@@ -4,12 +4,13 @@ use anchor_spl::token::{Mint, Token, TokenAccount};
 use pyth_client::{PriceType};
 use solana_program::program_pack::Pack;
 use spl_token::state::Account as SPLTokenAccount;
-use anchor_lang::{prelude::*, accounts};
+use anchor_lang::{prelude::*, accounts, AccountDeserialize};
 use crate::constants::*;
 use crate::*;
 use crate::error::{ErrorCode};
 use crate::state::cast;
 use std::cmp::max;
+
 // use state::available_asset::cast;
 
 // need to check that the mint provided matches the redeemable mint
@@ -75,12 +76,15 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 	let exchange_reserve_token = &ctx.accounts.exchange_reserve_token;
 	msg!("lamports {}", lamports);
 
-	let (oracles, available_assets) = get_price_and_available_assets(ctx.remaining_accounts);
+	let (oracles, available_assets) = get_price_and_available_assets(
+		ctx.remaining_accounts,
+		&ctx.accounts.exchange.price_oracles
+	);
 	let (aum, precise_price, exponent) = calculate_aum(
 		&oracles,
 		&available_assets, 
 		exchange_reserve_token,
-		&ctx.accounts.exchange.price_oracles
+		// &ctx.accounts.exchange.price_oracles
 	).unwrap();
 
 	msg!("precise price {}", precise_price);
@@ -207,12 +211,9 @@ pub fn calculate_fee_basis_points(
 		checked_div(10_u128.pow(exponent as u32) as u64)
 		.unwrap();
 
-	msg!("new amount {}", new_amount);
 	let next_reserve_usd_value = if increment { 
-		msg!("next reserve value {}", initial_reserve_usd_value + diff_usd_value);
 		initial_reserve_usd_value + diff_usd_value 
 	} else { 
-		msg!("maxxx initial_reserve_usd_value - diff_usd_value {}", initial_reserve_usd_value - diff_usd_value);
 		max((initial_reserve_usd_value - diff_usd_value) as i64, 0 as i64) as u64
 	};
 	
@@ -274,20 +275,29 @@ pub fn calculate_fee_basis_points(
 	return (FEE_IN_BASIS_POINTS as u64).add(penalty as u64)
 }
 
-pub fn get_price_and_available_assets<'a, 'b>(accounts: &'b[AccountInfo<'a>]) -> (
-	Vec<&'b AccountInfo<'a>>,
+pub fn get_price_and_available_assets<'a, 'b>(
+	accounts: &'b[AccountInfo<'a>],
+	price_oracle_keys: &Vec<anchor_lang::prelude::Pubkey>
+) -> (
+	Vec<(i128, i128)>,
 	Vec<AvailableAsset>
 ) {
 	let mut available_assets: Vec<AvailableAsset> = vec![];
-	let mut prices:  Vec<&AccountInfo> = vec![];
+	let mut prices:  Vec<(i128, i128)> = vec![];
 	for (i, info) in accounts.iter().enumerate() {
 		if i % 2 == 0 {
-			let data = &info.try_borrow_data().unwrap();
-			let available_asset: &AvailableAsset = cast::<AvailableAsset>(data);
+			let mut data: &[u8] = info.data.into_inner();
+			let available_asset: AvailableAsset = AccountDeserialize::try_deserialize(&mut data).unwrap();
+			// let available_asset: &AvailableAsset = cast::<AvailableAsset>(data);
 			msg!("available asset mint {}", available_asset.mint_address);
-			available_assets.push(*available_asset);
+			available_assets.push(available_asset);
 		} else {
-			prices.push(info);
+			// CHECK: Validate pyth data better here
+			let data = &info.try_borrow_data().unwrap();
+			assert!(price_oracle_keys.contains(info.key), "invalid oracle account provided");
+			let price = pyth_client::cast::<pyth_client::Price>(data);
+			msg!("price in conversion {} expo {}", price.agg.price, price.expo);
+			prices.push((price.agg.price as i128, price.expo as i128));
 		}
 	}
 	(prices, available_assets)
@@ -296,31 +306,22 @@ pub fn get_price_and_available_assets<'a, 'b>(accounts: &'b[AccountInfo<'a>]) ->
 // CHECK: that we should take the value of the token account as AUM and not the general reserves from the
 // available asset account
 pub fn calculate_aum(
-	prices: &[&AccountInfo], 
+	prices: &Vec<(i128, i128)>, 
 	available_assets: &[AvailableAsset],
 	exchange_reserve_token: &TokenAccount,
-	price_oracle_keys: &Vec<anchor_lang::prelude::Pubkey>
 ) -> Result<(u64,u64,u64)> {
-	for o in price_oracle_keys.iter() {
-		msg!("{}", o);
-	}
 	let mut aum = 0;
 	let mut precise_price = 0;
 	let mut exponent = 1;
 	let mut last_token_account: AvailableAsset = available_assets[0];
-	for (i, account_info) in prices.iter().enumerate() {
+	for (i, pyth_price) in prices.iter().enumerate() {
 		msg!("iterating {}", i);
 		msg!("available asset mints {} {}", available_assets[0].mint_address, available_assets[1].mint_address);
 		let current_available_asset = available_assets[i];
 		last_token_account = current_available_asset;
-		// CHECK: need to validate pyth data better here
-		// msg!("data key {}", token_account_info.key);
-		assert!(price_oracle_keys.contains(account_info.key), "invalid oracle account provided");
 
-		let pyth_price_data = &account_info.try_borrow_data()?;
-		// msg!("after borrow price data {}", &account_info.key);
-		let pyth_price = pyth_client::cast::<pyth_client::Price>(pyth_price_data);
-
+		let price = pyth_price.0;
+		let pyth_exponent = pyth_price.1;
 		msg!("last_token_account.mint_address {}", last_token_account.mint_address);
 		msg!("exchange_reserve_token.mint {}", exchange_reserve_token.mint);
 		msg!("last token pool reserves {}  token weight {} fee reserves{}", 
@@ -328,23 +329,22 @@ pub fn calculate_aum(
 			last_token_account.token_weight,
 			last_token_account.fee_reserves
 		);
-		// msg!("exchange_reserve_token.mint {}", exchange_reserve_token.mint);
+
 		if last_token_account.mint_address == exchange_reserve_token.mint {
 			msg!("found last_token_account.mint {}", last_token_account.mint_address);
 			msg!("exchange_reserve_token.mint {}", exchange_reserve_token.mint);
-			msg!("found price oracle for reserve asset...about to set reserve asset price {}", pyth_price.agg.price);
-			exponent = pyth_price.expo.abs() as u64;
-			precise_price = pyth_price.agg.price as u64;
-			msg!(" in calc aum w/ expo {} precise price {}", pyth_price.expo, pyth_price.agg.price)
+			msg!("found price oracle for reserve asset...about to set reserve asset price {}", price);
+			exponent = pyth_exponent.abs() as u64;
+			precise_price = price as u64;
+			msg!(" in calc aum w/ expo {} precise price {}", exponent, price)
 		}
 
-		let price = pyth_price.agg.price;
 		msg!("about to add to aum in calc aum");
-		msg!("outside calc aum w/ expo {} pyth_price.agg.price {}", pyth_price.expo, pyth_price.agg.price);
+		msg!("outside calc aum w/ expo {} price {}", pyth_exponent, price);
 		aum += last_token_account.pool_reserves.checked_mul(price as u64)
 			.unwrap()
 			.checked_div(
-				10_u64.pow(pyth_price.expo.abs() as u32)
+				10_u64.pow(pyth_exponent.abs() as u32)
 			)
 			.unwrap();
 		msg!("aum {} precise price {} exponent {}", aum, precise_price, exponent);
