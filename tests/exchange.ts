@@ -125,6 +125,8 @@ describe('jmx', () => {
       8 // decimals
     );
 
+    console.log("fake mints", fakeUsdcMint.toString(), fakeWSolMint.toString())
+
     const tx = await program.rpc.initializeExchange(
       exchangeName,
       {
@@ -248,6 +250,7 @@ describe('jmx', () => {
       availableAssetPdaUsdc
     );
     const availableAssetAccountData = program.coder.accounts.decode('AvailableAsset', availableAssetAccount.data)
+    console.log("availableAssetAccountData", availableAssetAccountData.oracleAddress.toString())
     assert.equal(availableAssetAccountData.tokenDecimals.toNumber(), 1);
     assert.equal(availableAssetAccountData.tokenWeight.toNumber(), 10000);
     assert.equal(availableAssetAccountData.minProfitBasisPoints.toNumber(), 1);
@@ -354,6 +357,7 @@ describe('jmx', () => {
       availableAssetPdaWSol
     );
     const availableAssetAccountData = program.coder.accounts.decode('AvailableAsset', availableAssetAccount.data)
+    console.log("availableAssetAccountData", availableAssetAccountData.oracleAddress.toString())
     assert.equal(availableAssetAccountData.tokenDecimals.toNumber(), 1);
     assert.equal(availableAssetAccountData.tokenWeight.toNumber(), 10000);
     assert.equal(availableAssetAccountData.minProfitBasisPoints.toNumber(), 1);
@@ -411,7 +415,7 @@ describe('jmx', () => {
 
     remainingAccounts = [
       {
-        pubkey: exchangeUSDCPda,
+        pubkey: availableAssetPdaUsdc,
         isWritable: false,
         isSigner: false
       },
@@ -421,7 +425,7 @@ describe('jmx', () => {
         isSigner: false
       },
       {
-        pubkey: exchangeWSolPda,
+        pubkey: availableAssetPdaWSol,
         isWritable: false,
         isSigner: false
       },

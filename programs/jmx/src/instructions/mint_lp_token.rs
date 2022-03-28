@@ -4,12 +4,13 @@ use anchor_spl::token::{Mint, Token, TokenAccount};
 use pyth_client::{PriceType};
 use solana_program::program_pack::Pack;
 use spl_token::state::Account as SPLTokenAccount;
-use anchor_lang::prelude::*;
+use anchor_lang::{prelude::*, accounts};
 use crate::constants::*;
 use crate::*;
 use crate::error::{ErrorCode};
+use crate::state::cast;
 use std::cmp::max;
-use std::convert::TryInto;
+// use state::available_asset::cast;
 
 // need to check that the mint provided matches the redeemable mint
 // CHECK: that mints and provided assets match for all provided accounts
@@ -74,8 +75,10 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 	let exchange_reserve_token = &ctx.accounts.exchange_reserve_token;
 	msg!("lamports {}", lamports);
 
+	let (oracles, available_assets) = get_price_and_available_assets(ctx.remaining_accounts);
 	let (aum, precise_price, exponent) = calculate_aum(
-		ctx.remaining_accounts, 
+		&oracles,
+		&available_assets, 
 		exchange_reserve_token,
 		&ctx.accounts.exchange.price_oracles
 	).unwrap();
@@ -271,63 +274,80 @@ pub fn calculate_fee_basis_points(
 	return (FEE_IN_BASIS_POINTS as u64).add(penalty as u64)
 }
 
+pub fn get_price_and_available_assets<'a, 'b>(accounts: &'b[AccountInfo<'a>]) -> (
+	Vec<&'b AccountInfo<'a>>,
+	Vec<AvailableAsset>
+) {
+	let mut available_assets: Vec<AvailableAsset> = vec![];
+	let mut prices:  Vec<&AccountInfo> = vec![];
+	for (i, info) in accounts.iter().enumerate() {
+		if i % 2 == 0 {
+			let data = &info.try_borrow_data().unwrap();
+			let available_asset: &AvailableAsset = cast::<AvailableAsset>(data);
+			msg!("available asset mint {}", available_asset.mint_address);
+			available_assets.push(*available_asset);
+		} else {
+			prices.push(info);
+		}
+	}
+	(prices, available_assets)
+}
+
 // CHECK: that we should take the value of the token account as AUM and not the general reserves from the
 // available asset account
 pub fn calculate_aum(
-	remaining_accounts: &[AccountInfo], 
-	exchange_reserve_token: &Box<anchor_lang::prelude::Account<'_, TokenAccount>>,
-	price_oracles: &Vec<anchor_lang::prelude::Pubkey>
+	prices: &[&AccountInfo], 
+	available_assets: &[AvailableAsset],
+	exchange_reserve_token: &TokenAccount,
+	price_oracle_keys: &Vec<anchor_lang::prelude::Pubkey>
 ) -> Result<(u64,u64,u64)> {
-	for o in price_oracles.iter() {
+	for o in price_oracle_keys.iter() {
 		msg!("{}", o);
 	}
 	let mut aum = 0;
 	let mut precise_price = 0;
 	let mut exponent = 1;
-	let mut last_token_account: SPLTokenAccount = SPLTokenAccount::unpack_unchecked(&remaining_accounts[0].data.borrow())?;
-	// msg!("remaining_accounts {:?}", remaining_accounts);
-	for (i, token_account_info) in remaining_accounts.iter().enumerate() {
-		// msg!("iterating {}", i);
-		if i % 2 == 0 {
-			// token account
-			if token_account_info.owner != &spl_token::id() {
-				return Err(ErrorCode::AccountNotSystemOwned.into());
-			}
-			let unpacked_token_account = SPLTokenAccount::unpack_unchecked(&token_account_info.data.borrow())?;
-			last_token_account = unpacked_token_account;
-		} else {
-			// oracle account
-			// CHECK: need to validate pyth data better here
-			// msg!("data key {}", token_account_info.key);
-			assert!(price_oracles.contains(token_account_info.key), "invalid oracle account provided");
+	let mut last_token_account: AvailableAsset = available_assets[0];
+	for (i, account_info) in prices.iter().enumerate() {
+		msg!("iterating {}", i);
+		msg!("available asset mints {} {}", available_assets[0].mint_address, available_assets[1].mint_address);
+		let current_available_asset = available_assets[i];
+		last_token_account = current_available_asset;
+		// CHECK: need to validate pyth data better here
+		// msg!("data key {}", token_account_info.key);
+		assert!(price_oracle_keys.contains(account_info.key), "invalid oracle account provided");
 
-			let pyth_price_data = &token_account_info.try_borrow_data()?;
-			// msg!("after borrow price data {}", &token_account_info.key);
-			// msg!("Pyth Price size {} account size {}", std::mem::size_of::<pyth_client::Price>(), pyth_price_data.len());
-			let pyth_price = pyth_client::cast::<pyth_client::Price>(pyth_price_data);
-			// get price of asset to deposit
+		let pyth_price_data = &account_info.try_borrow_data()?;
+		// msg!("after borrow price data {}", &account_info.key);
+		let pyth_price = pyth_client::cast::<pyth_client::Price>(pyth_price_data);
 
-			// msg!("last_token_account.mint {}", last_token_account.mint);
-			// msg!("exchange_reserve_token.mint {}", exchange_reserve_token.mint);
-			if last_token_account.mint == exchange_reserve_token.mint {
-				msg!("found last_token_account.mint {}", last_token_account.mint);
-				msg!("exchange_reserve_token.mint {}", exchange_reserve_token.mint);
-				// msg!("found price oracle for reserve asset...about to set reserve asset price {}", pyth_price.agg.price);
-				exponent = pyth_price.expo.abs() as u64;
-				precise_price = pyth_price.agg.price as u64;
-				// msg!(" in calc aum w/ expo {} precise price {}", pyth_price.expo, pyth_price.agg.price)
-			}
-
-			let price = pyth_price.agg.price;
-			// msg!("about to add to aum in calc aum");
-			aum += last_token_account.amount.checked_mul(price as u64)
-				.unwrap()
-				.checked_div(
-					10_u64.pow(pyth_price.expo.abs() as u32)
-				)
-				.unwrap();
-			// msg!("about to return in calc aum");
+		msg!("last_token_account.mint_address {}", last_token_account.mint_address);
+		msg!("exchange_reserve_token.mint {}", exchange_reserve_token.mint);
+		msg!("last token pool reserves {}  token weight {} fee reserves{}", 
+			last_token_account.pool_reserves,
+			last_token_account.token_weight,
+			last_token_account.fee_reserves
+		);
+		// msg!("exchange_reserve_token.mint {}", exchange_reserve_token.mint);
+		if last_token_account.mint_address == exchange_reserve_token.mint {
+			msg!("found last_token_account.mint {}", last_token_account.mint_address);
+			msg!("exchange_reserve_token.mint {}", exchange_reserve_token.mint);
+			msg!("found price oracle for reserve asset...about to set reserve asset price {}", pyth_price.agg.price);
+			exponent = pyth_price.expo.abs() as u64;
+			precise_price = pyth_price.agg.price as u64;
+			msg!(" in calc aum w/ expo {} precise price {}", pyth_price.expo, pyth_price.agg.price)
 		}
+
+		let price = pyth_price.agg.price;
+		msg!("about to add to aum in calc aum");
+		msg!("outside calc aum w/ expo {} pyth_price.agg.price {}", pyth_price.expo, pyth_price.agg.price);
+		aum += last_token_account.pool_reserves.checked_mul(price as u64)
+			.unwrap()
+			.checked_div(
+				10_u64.pow(pyth_price.expo.abs() as u32)
+			)
+			.unwrap();
+		msg!("aum {} precise price {} exponent {}", aum, precise_price, exponent);
 	}
 	Ok((aum, precise_price, exponent))
 }

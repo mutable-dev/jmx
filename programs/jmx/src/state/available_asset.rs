@@ -4,7 +4,7 @@ use serde::{Serialize, Deserialize};
 
 /// Represents whitelisted assets on the dex
 #[account]
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize, Copy)]
 pub struct AvailableAsset {
 		/// Mint address of the available asset
 	pub mint_address: Pubkey,
@@ -40,4 +40,9 @@ pub struct AvailableAsset {
 	/// does not include fee_reserves
 	pub pool_reserves: u64,
 
+}
+
+pub fn cast<T>( d: &[u8] ) -> &T {
+  let (_, pxa, _) = unsafe { d.align_to::<T>() };
+  &pxa[0]
 }
