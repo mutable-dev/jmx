@@ -79,7 +79,7 @@ pub fn handler(ctx: Context<MintLpToken>, exchange_name: String, asset_name: Str
 	let (oracles, available_assets) = get_price_and_available_assets(
 		ctx.remaining_accounts,
 		&ctx.accounts.exchange.price_oracles
-	);
+	)?;
 	let (aum, precise_price, exponent) = calculate_aum(
 		&oracles,
 		&available_assets, 
@@ -278,15 +278,15 @@ pub fn calculate_fee_basis_points(
 pub fn get_price_and_available_assets<'a, 'b>(
 	accounts: &'b[AccountInfo<'a>],
 	price_oracle_keys: &Vec<anchor_lang::prelude::Pubkey>
-) -> (
+) -> Result<(
 	Vec<(i128, i128)>,
 	Vec<AvailableAsset>
-) {
+)> {
 	let mut available_assets: Vec<AvailableAsset> = vec![];
 	let mut prices:  Vec<(i128, i128)> = vec![];
 	for (i, info) in accounts.iter().enumerate() {
 		if i % 2 == 0 {
-			let mut data: &[u8] = info.data.into_inner();
+			let mut data: &[u8] = &info.try_borrow_data()?;
 			let available_asset: AvailableAsset = AccountDeserialize::try_deserialize(&mut data).unwrap();
 			// let available_asset: &AvailableAsset = cast::<AvailableAsset>(data);
 			msg!("available asset mint {}", available_asset.mint_address);
@@ -300,7 +300,7 @@ pub fn get_price_and_available_assets<'a, 'b>(
 			prices.push((price.agg.price as i128, price.expo as i128));
 		}
 	}
-	(prices, available_assets)
+	Ok((prices, available_assets))
 }
 
 // CHECK: that we should take the value of the token account as AUM and not the general reserves from the

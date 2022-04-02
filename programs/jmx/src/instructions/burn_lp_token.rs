@@ -70,7 +70,7 @@ pub fn handler(ctx: Context<BurnLpToken>, exchange_name: String, asset_name: Str
 	let (oracles, available_assets) = get_price_and_available_assets(
 		ctx.remaining_accounts,
 		&ctx.accounts.exchange.price_oracles
-	);
+	)?;
 	let (aum, precise_price, exponent) = calculate_aum(
 		&oracles, 
 		&available_assets,

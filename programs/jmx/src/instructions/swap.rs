@@ -98,7 +98,7 @@ pub fn handler(
 	let (oracles, available_assets) = get_price_and_available_assets(
 		ctx.remaining_accounts,
 		&ctx.accounts.exchange.price_oracles
-	);
+	)?;
 	let (aum, input_precise_price, input_exponent) = calculate_aum(
 		&oracles, 
 		&available_assets, 
